@@ -1,3 +1,3 @@
 # Kyle and his Chickens
 
-A 
+A simple and fun little game where the player
