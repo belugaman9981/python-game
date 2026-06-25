@@ -38,49 +38,54 @@ import sys
 # ---------------------------------------------------------------------------
 pygame.init()
 
-TILE = 16                      # every tile and character sprite is 16x16
-MAP_W, MAP_H = 700, 700        # world size in TILES (11,200 x 11,200 px)
+TILE = 16                      # logical tile size (game-logic units)
+SCALE = 2                      # display scale: each logical pixel → 2×2 screen pixels
+DISPLAY_TILE = TILE * SCALE    # 32 screen-pixels per tile
+MAP_W, MAP_H = 700, 700
 
-VIEW_RADIUS_TILES = 13         # ~10-15 tile radius of visibility, as requested
-VIEW_TILES_ACROSS = VIEW_RADIUS_TILES * 2 + 1  # tiles visible across the screen
+VIEW_RADIUS_TILES = 11
+VIEW_TILES_ACROSS = VIEW_RADIUS_TILES * 2 + 1   # 23 tiles visible
 
-SCREEN_SIZE = VIEW_TILES_ACROSS * TILE   # window matches the visible radius exactly
-SCREEN_W = SCREEN_H = SCREEN_SIZE
-HUD_HEIGHT = 56
+SCREEN_W = SCREEN_H = VIEW_TILES_ACROSS * DISPLAY_TILE   # 736
+HUD_HEIGHT = 76
 
 screen = pygame.display.set_mode((SCREEN_W, SCREEN_H + HUD_HEIGHT))
 pygame.display.set_caption("Kyle Jordan's Maze Adventure")
 clock = pygame.time.Clock()
 FPS = 60
 
-FONT = pygame.font.SysFont("arial", 16)
-BIG_FONT = pygame.font.SysFont("arial", 30, bold=True)
+FONT     = pygame.font.SysFont("monospace", 13)
+BIG_FONT = pygame.font.SysFont("monospace", 24, bold=True)
+HUD_FONT = pygame.font.SysFont("monospace", 12, bold=True)
 
 CHICKENS_TO_WIN = 8
 
 # ---------------------------------------------------------------------------
 # Tile types
 # ---------------------------------------------------------------------------
-WATER = 0
-SAND = 1
-GRASS = 2
-HUT_FLOOR = 3
-HUT_WALL = 4
-DESK = 5
-MAT = 6
+WATER         = 0
+SAND          = 1
+GRASS         = 2
+HUT_FLOOR     = 3
+HUT_WALL      = 4
+DESK          = 5
+MAT           = 6
 TRAPDOOR_OPEN = 7
-MARKET_FLOOR = 8
-MARKET_WALL = 9
-WOLF_GRASS = 10  # grass tile on the werewolf islands (kept separate for clarity)
+MARKET_FLOOR  = 8
+MARKET_WALL   = 9
+WOLF_GRASS    = 10
+TREE          = 11   # impassable tree canopy
+FLOWER        = 12   # walkable grass with decorative flower
+PATH          = 13   # dirt path (walkable)
 
-SOLID_TILES = {HUT_WALL, MARKET_WALL, WATER}  # can't walk through these
+SOLID_TILES = {HUT_WALL, MARKET_WALL, WATER, TREE}
 
 
 # ---------------------------------------------------------------------------
-# Tiny 16x16 pixel-art drawing helpers
+# Pixel-art drawing helpers
 # ---------------------------------------------------------------------------
 def make_surface(pixels, palette):
-    """Build a 16x16 surface from a 16x16 grid of palette-index characters."""
+    """Build a 16x16 SRCALPHA surface. '.' = transparent."""
     surf = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
     for y, row in enumerate(pixels):
         for x, ch in enumerate(row):
@@ -89,77 +94,291 @@ def make_surface(pixels, palette):
     return surf
 
 
-def solid_tile(color):
+def _make_tile(rows, palette):
+    """Solid 16x16 tile from 16 rows of 16 palette characters."""
     surf = pygame.Surface((TILE, TILE))
-    surf.fill(color)
+    for y, row in enumerate(rows):
+        for x, ch in enumerate(row):
+            surf.set_at((x, y), palette[ch])
     return surf
 
 
-# ---- Terrain tiles (simple, since they're backgrounds) --------------------
-TILE_IMAGES = {
-    WATER: solid_tile((40, 90, 190)),
-    SAND: solid_tile((220, 200, 140)),
-    GRASS: solid_tile((70, 165, 90)),
-    WOLF_GRASS: solid_tile((55, 120, 70)),
-    HUT_FLOOR: solid_tile((160, 120, 80)),
-    HUT_WALL: solid_tile((110, 75, 45)),
-    MARKET_FLOOR: solid_tile((60, 45, 70)),
-    MARKET_WALL: solid_tile((35, 25, 45)),
-    TRAPDOOR_OPEN: solid_tile((20, 15, 25)),
-}
+# ---- Terrain tile art ------------------------------------------------------
+_GRASS = _make_tile([
+    "aababcaababcaabb",
+    "baabcaabaababcba",
+    "cababababaaabcaa",
+    "aacbaaabbbcaaacb",
+    "bbaacaababaabcaa",
+    "aababcabaacbaabb",
+    "cbaaababcbaabaac",
+    "ababcaaababcaabb",
+    "baacacababcaaabb",
+    "acabaababcaaaaba",
+    "aabcaaaababcaaab",
+    "cbababcaaababcab",
+    "ababcaaabababcaa",
+    "baababcaababaabc",
+    "caababcaaababcab",
+    "aababcaaababcaab",
+], {"a": (88,172,95), "b": (102,195,112), "c": (70,148,78)})
 
-# Add a touch of texture (speckles) to water/grass so it doesn't look completely flat
-def add_speckles(img, dot_color, count=6, seed_extra=0):
-    rnd = random.Random(hash((id(img), seed_extra)) & 0xFFFFFFFF)
-    img = img.copy()
-    for _ in range(count):
-        x, y = rnd.randint(0, TILE - 1), rnd.randint(0, TILE - 1)
-        img.set_at((x, y), dot_color)
-    return img
+_WOLF_GRASS = _make_tile([
+    "aababcaababcaabb",
+    "baabcaabaababcba",
+    "cababababaaabcaa",
+    "aacbaaabbbcaaacb",
+    "bbaacaababaabcaa",
+    "aababcabaacbaabb",
+    "cbaaababcbaabaac",
+    "ababcaaababcaabb",
+    "baacacababcaaabb",
+    "acabaababcaaaaba",
+    "aabcaaaababcaaab",
+    "cbababcaaababcab",
+    "ababcaaabababcaa",
+    "baababcaababaabc",
+    "caababcaaababcab",
+    "aababcaaababcaab",
+], {"a": (58,130,68), "b": (72,148,82), "c": (45,110,55)})
 
+_WATER = _make_tile([
+    "WWwWbWwWWwbWWwWW",
+    "wWbbWwwbWWwWbWwW",
+    "WbWwWWbbWwWWwbWW",
+    "bWWwWWwWbWWwWWbW",
+    "WwbWWwgWwbWWwWbw",
+    "WwWwbWWwWwbWWwWW",
+    "bWWWwWWbbWwWWwWb",
+    "wWbWWwWWwbWWwWWw",
+    "WWwWbWgwgWbWWwWW",
+    "bWWwWWbWwWWwWWbW",
+    "wWbWWwWWwwWWwWWw",
+    "WwWbWWwWWwbWWwWW",
+    "WWbWWwWWbWWwWWbW",
+    "bWWwWWbWwWWbWWwW",
+    "wWbWWwWWwbWWwWWb",
+    "WWwbWWwWWwbWWwWW",
+], {"W": (45,105,195), "w": (60,125,215), "b": (32,85,178), "g": (148,205,255)})
 
-TILE_IMAGES[WATER] = add_speckles(TILE_IMAGES[WATER], (70, 130, 220), 5)
-TILE_IMAGES[GRASS] = add_speckles(TILE_IMAGES[GRASS], (90, 185, 110), 5)
-TILE_IMAGES[WOLF_GRASS] = add_speckles(TILE_IMAGES[WOLF_GRASS], (40, 95, 55), 5)
-TILE_IMAGES[SAND] = add_speckles(TILE_IMAGES[SAND], (235, 215, 160), 4)
+_SAND = _make_tile([
+    "SSsSSSdSSsSSSdSS",
+    "sSdSSSSsSdSSSSsS",
+    "SSSSdSSSSSSdSSSS",
+    "dSSsSSSdSSsSSSdS",
+    "SSSSSdSSSSSSdSSS",
+    "sSSSdSSsSSSdSsSS",
+    "SSdSSSSSSdSSSSdS",
+    "SSSsSSSdSSSsSSSd",
+    "dSSSSdSSSSSSdSSS",
+    "SSsSSSdSSSsSSSdS",
+    "SSSdSSSSdSSSSSSS",
+    "sSSSdSsSSSdSSSsS",
+    "SSSSSSdSSSSSSdSS",
+    "dSSsSSSdSSsSSSdS",
+    "SSSSSdSSSSSSdSSS",
+    "SSsSSSdSSsSSSdSS",
+], {"S": (215,190,140), "s": (228,205,155), "d": (195,170,118)})
 
+_PATH = _make_tile([
+    "PPlPPpPPlPPpPPlP",
+    "lPpPPPPlPpPPPPlP",
+    "PPPPpPPPPPPpPPPP",
+    "pPPlPPPpPPlPPPpP",
+    "PPPPPpPPPPPPpPPP",
+    "lPPPpPPlPPPpPlPP",
+    "PPpPPPPPPpPPPPpP",
+    "PPPlPPPpPPPlPPPp",
+    "pPPPPpPPPPPPpPPP",
+    "PPlPPPpPPPlPPPpP",
+    "PPPpPPPPpPPPPPPP",
+    "lPPPpPlPPPpPPPlP",
+    "PPPPPPpPPPPPPpPP",
+    "pPPlPPPpPPlPPPpP",
+    "PPPPPpPPPPPPpPPP",
+    "PPlPPPpPPlPPPpPP",
+], {"P": (155,115,72), "p": (138,98,58), "l": (172,132,89)})
 
-# ---- Desk sprite (sits on hut floor) --------------------------------------
-def make_desk():
-    img = TILE_IMAGES[HUT_FLOOR].copy()
+_HUT_FLOOR = _make_tile([
+    "wWwWwWwWwWwWwWwW",
+    "WWdWWdWWdWWdWWdW",
+    "WgWgWWgWgWWgWgWg",
+    "dWWdWWdWWdWWdWWd",
+    "WwWwWwWwWwWwWwWw",
+    "WdWWdWWdWWdWWdWW",
+    "gWgWgWgWgWgWgWgW",
+    "dWWdWWdWWdWWdWWd",
+    "wWwWwWwWwWwWwWwW",
+    "WWdWWdWWdWWdWWdW",
+    "WgWgWWgWgWWgWgWg",
+    "dWWdWWdWWdWWdWWd",
+    "WwWwWwWwWwWwWwWw",
+    "WdWWdWWdWWdWWdWW",
+    "gWgWgWgWgWgWgWgW",
+    "dWWdWWdWWdWWdWWd",
+], {"W": (175,128,75), "w": (190,142,88), "d": (148,105,58), "g": (125,88,42)})
+
+_HUT_WALL = _make_tile([
+    "RrRRRdRrRRRdRrRR",
+    "dRrRRRdRrRRRdRrR",
+    "RRdRrRRRdRrRRRdR",
+    "rRRRdRrRRRdRrRRR",
+    "RrRRRdRrRRRdRrRR",
+    "dRrRRRdRrRRRdRrR",
+    "RRdRrRRRdRrRRRdR",
+    "rRRRdRrRRRdRrRRR",
+    "RrRRRdRrRRRdRrRR",
+    "dRrRRRdRrRRRdRrR",
+    "RRdRrRRRdRrRRRdR",
+    "rRRRdRrRRRdRrRRR",
+    "RrRRRdRrRRRdRrRR",
+    "dRrRRRdRrRRRdRrR",
+    "RRdRrRRRdRrRRRdR",
+    "rRRRdRrRRRdRrRRR",
+], {"R": (148,65,38), "r": (172,82,48), "d": (115,50,25)})
+
+_MARKET_FLOOR = _make_tile([
+    "SSSSSSSdSSSSSSdS",
+    "sSdSSSSSsSdSSSsS",
+    "SSSdSSSSSSSdSSSS",
+    "SSSSdSSSSSSSdSSS",
+    "gggggggggggggggg",
+    "SSSSSSSdSSSSSSdS",
+    "sSSSdSSSsSSSdSSS",
+    "SSSSSSSSdSSSSSSS",
+    "SSdSSSSSSSdSSSsS",
+    "gggggggggggggggg",
+    "SSSSSdSSSSSSdSSS",
+    "sSSSSSSSsSSSSSdS",
+    "SSdSSSSSSSdSSSsS",
+    "SSSSSSSdSSSSSSdS",
+    "gggggggggggggggg",
+    "SSSSSdSSSSSSdSSS",
+], {"S": (55,45,72), "s": (68,58,88), "d": (40,32,55), "g": (28,22,40)})
+
+_MARKET_WALL = _make_tile([
+    "DDddDDddDDddDDdd",
+    "dDDcDddDDcDddDDc",
+    "DddcDDddcDDddcDD",
+    "ddDDcddDDcddDDcd",
+    "cDDddcDDddcDDddc",
+    "DddDDcddDDcddDDc",
+    "ddcDDddcDDddcDDd",
+    "DDcddDDcddDDcddd",
+    "DDddDDddDDddDDdd",
+    "dDDcDddDDcDddDDc",
+    "DddcDDddcDDddcDD",
+    "ddDDcddDDcddDDcd",
+    "cDDddcDDddcDDddc",
+    "DddDDcddDDcddDDc",
+    "ddcDDddcDDddcDDd",
+    "DDcddDDcddDDcddd",
+], {"D": (30,22,40), "d": (40,32,52), "c": (50,40,65)})
+
+_TRAPDOOR = _make_tile([
+    "DDDDDDDDDDDDDdDD",
+    "DbDbDbDbDbDbDbDb",
+    "DDDDDDDDDDDDDdDD",
+    "DbDbDbDbDbDbDbDb",
+    "DDgDDDDDDDDgDDDD",
+    "DbDbgbDbDbgbDbDb",
+    "DDDDDDDDDDDDDdDD",
+    "DbDbDbDbDbDbDbDb",
+    "gDDDDgDDDDgDDDDg",
+    "DbDbDbDbDbDbDbDb",
+    "DDDDDDDDDDDDDdDD",
+    "DbDbDbDbDbDbDbDb",
+    "DDgDDDDDDDDgDDDD",
+    "DbDbgbDbDbgbDbDb",
+    "DDDDDDDDDDDDDdDD",
+    "DbDbDbDbDbDbDbDb",
+], {"D": (20,15,28), "d": (30,23,40), "b": (45,35,58), "g": (68,52,85)})
+
+def _make_desk():
+    img = _HUT_FLOOR.copy()
     pygame.draw.rect(img, (90, 55, 30), (1, 4, 14, 10))
     pygame.draw.rect(img, (60, 35, 18), (1, 4, 14, 10), 1)
     pygame.draw.rect(img, (40, 25, 12), (2, 11, 3, 4))
     pygame.draw.rect(img, (40, 25, 12), (11, 11, 3, 4))
     return img
 
-
-def make_mat():
-    img = TILE_IMAGES[HUT_FLOOR].copy()
+def _make_mat():
+    img = _HUT_FLOOR.copy()
     pygame.draw.rect(img, (150, 40, 40), (2, 2, 12, 12))
     pygame.draw.rect(img, (110, 25, 25), (2, 2, 12, 12), 1)
     pygame.draw.line(img, (110, 25, 25), (2, 6), (14, 6))
     pygame.draw.line(img, (110, 25, 25), (2, 10), (14, 10))
     return img
 
+def _make_flower():
+    """Grass tile with two tiny pixel-art flowers."""
+    img = _GRASS.copy()
+    # White daisy at (7, 5)
+    img.set_at((7, 4), (252, 252, 252))
+    img.set_at((6, 5), (252, 252, 252)); img.set_at((7, 5), (248, 215, 35)); img.set_at((8, 5), (252, 252, 252))
+    img.set_at((7, 6), (252, 252, 252))
+    # Pink flower at (3, 11)
+    img.set_at((3, 10), (252, 220, 240))
+    img.set_at((2, 11), (252, 220, 240)); img.set_at((3, 11), (248, 165, 215)); img.set_at((4, 11), (252, 220, 240))
+    img.set_at((3, 12), (252, 220, 240))
+    return img
 
-TILE_IMAGES[DESK] = make_desk()
-TILE_IMAGES[MAT] = make_mat()
+def _make_tree():
+    """Round tree canopy viewed from above (SRCALPHA)."""
+    return make_surface([
+        "....sDDDDDDs....",
+        "...DGGgGGGGGDs..",
+        "..DGGGGGGGGGGDs.",
+        ".DGGGGGGGGGGGGDs",
+        ".DGGGhGGGGhGGGGs",
+        ".DGGGGGttGGGGGGs",
+        ".DGGGGttttGGGGGs",
+        ".DGGGGGttGGGGGGs",
+        ".DGGGGGGGGGGGGGs",
+        ".DGGhGGGGGGhGGGs",
+        ".DGGGGGGGGGGGGGs",
+        ".DGGGGGGGGGGGGDs",
+        "..DGGGGGGGGGGDs.",
+        "...sDDGGGGDDs...",
+        "....sssDDsss....",
+        "................",
+    ], {
+        ".": None,
+        "D": (28,100,35), "G": (50,145,58), "g": (72,178,82),
+        "h": (95,210,108), "t": (100,70,38), "s": (18,78,24),
+    })
+
+TILE_IMAGES = {
+    GRASS:        _GRASS,
+    WOLF_GRASS:   _WOLF_GRASS,
+    WATER:        _WATER,
+    SAND:         _SAND,
+    PATH:         _PATH,
+    HUT_FLOOR:    _HUT_FLOOR,
+    HUT_WALL:     _HUT_WALL,
+    MARKET_FLOOR: _MARKET_FLOOR,
+    MARKET_WALL:  _MARKET_WALL,
+    TRAPDOOR_OPEN:_TRAPDOOR,
+    DESK:         _make_desk(),
+    MAT:          _make_mat(),
+    FLOWER:       _make_flower(),
+    TREE:         _make_tree(),
+}
 
 
-# ---- Character / NPC sprites (16x16 pixel art) -----------------------------
+# ---- Character / NPC sprites (16x16 pixel art, scaled 2× for display) ------
 def make_kyle():
-    # Kyle: blue shirt, brown hair, simple stance
     p = {
-        ".": None, "k": (40, 30, 20), "f": (235, 200, 170),
-        "b": (50, 90, 200), "d": (30, 60, 150), "w": (255, 255, 255),
+        ".": None, "k": (45, 32, 22), "f": (238, 205, 175),
+        "b": (55, 95, 210), "d": (32, 62, 158), "w": (255, 255, 255),
+        "n": (30, 22, 15),
     }
     rows = [
-        "....kkkkkkkk....",
-        "...kkkkkkkkkk...",
-        "...kffffffffk...",
-        "..kfffwfwfffk...",
-        "...ffffffffff...",
+        "....nnnnnnnn....",
+        "...nkkkkkkkkn...",
+        "...kfffffffkk...",
+        "..kffwf.wfffk...",
+        "...ffffffff.k...",
         "....ffffffff....",
         "...bbbbbbbbbb...",
         "..bbbbbbbbbbbb..",
@@ -168,7 +387,7 @@ def make_kyle():
         "..bb........bb..",
         "..bb........bb..",
         "..kk........kk..",
-        "..kk........kk..",
+        "..nn........nn..",
         "................",
         "................",
     ]
@@ -176,17 +395,17 @@ def make_kyle():
 
 
 def make_noah():
-    # Noah: green hoodie, 18-year-old, slightly tired-looking
     p = {
-        ".": None, "k": (60, 45, 30), "f": (225, 190, 160),
-        "g": (50, 140, 80), "d": (30, 100, 55), "w": (255, 255, 255),
+        ".": None, "k": (62, 46, 30), "f": (228, 192, 162),
+        "g": (52, 145, 82), "d": (32, 102, 58), "w": (255, 255, 255),
+        "n": (30, 22, 12),
     }
     rows = [
-        "....kkkkkkkk....",
-        "...kkkkkkkkkk...",
-        "...kffffffffk...",
-        "..kfffwfwfffk...",
-        "...ffffffffff...",
+        "....nnnnnnnn....",
+        "...nkkkkkkkkn...",
+        "...kfffffffkk...",
+        "..kffwf.wfffk...",
+        "...fffffffff....",
         "....ffffffff....",
         "...gggggggggg...",
         "..gggggggggggg..",
@@ -195,7 +414,7 @@ def make_noah():
         "..gg........gg..",
         "..gg........gg..",
         "..kk........kk..",
-        "..kk........kk..",
+        "..nn........nn..",
         "................",
         "................",
     ]
@@ -203,22 +422,21 @@ def make_noah():
 
 
 def make_merchant():
-    # Merchant: purple cloak, hood up (mysterious black-market vibe)
     p = {
-        ".": None, "h": (90, 40, 120), "s": (60, 25, 85),
-        "f": (40, 30, 35), "g": (210, 175, 60),
+        ".": None, "h": (95, 42, 128), "s": (62, 28, 90),
+        "f": (42, 32, 38), "g": (218, 182, 65), "e": (155, 105, 200),
     }
     rows = [
         "....hhhhhhhh....",
         "...hhhhhhhhhh...",
         "..hhhhffffhhhh..",
-        "..hhhff..ffhhh..",
+        "..hhhfe..efhhh..",
         "..hhhffffffhh...",
-        "...hhhhhhhhh....",
+        "...hhhhhhhhhh...",
         "...hhssssshh....",
         "..hhssssssshh...",
-        "..hhssgsssshh...",
-        "..hhsssssssh....",
+        "..hhssgsssssh...",
+        "..hhssssssshh...",
         "..hh........hh..",
         "..hh........hh..",
         "..ss........ss..",
@@ -231,14 +449,14 @@ def make_merchant():
 
 def make_werewolf():
     p = {
-        ".": None, "g": (95, 95, 100), "d": (55, 55, 60),
-        "r": (210, 40, 40), "w": (235, 235, 235),
+        ".": None, "g": (100, 98, 108), "d": (58, 58, 65),
+        "r": (215, 45, 45), "w": (238, 238, 238), "y": (255, 210, 55),
     }
     rows = [
         "...g......g.....",
         "..ggg....ggg....",
         "..gggggggggg....",
-        ".ggrgggggrggg...",
+        ".ggryggggyrggg..",
         ".gggggwgggggg...",
         ".gggggwgggggg...",
         "..gggggggggg....",
@@ -256,12 +474,11 @@ def make_werewolf():
 
 
 def make_chicken():
-    p = {".": None, "w": (255, 255, 255), "y": (240, 190, 40), "r": (210, 50, 40)}
+    p = {".": None, "w": (255, 255, 255), "y": (240, 195, 45), "r": (215, 55, 45), "o": (248, 175, 55)}
     rows = [
-        "................",
-        "......wwww......",
-        ".....wwwwww.....",
-        ".....wwwwww.....",
+        "......oooo......",
+        ".....owwwwo.....",
+        "....owwwwwwo....",
         "....rwwwwwww....",
         "....wwwwwwww....",
         "....wwwwwwww....",
@@ -274,17 +491,23 @@ def make_chicken():
         "................",
         "................",
         "................",
+        "................",
     ]
     return make_surface(rows, p)
 
 
 SPRITES = {
-    "kyle": make_kyle(),
-    "noah": make_noah(),
+    "kyle":     make_kyle(),
+    "noah":     make_noah(),
     "merchant": make_merchant(),
     "werewolf": make_werewolf(),
-    "chicken": make_chicken(),
+    "chicken":  make_chicken(),
 }
+
+# Scale all tiles and sprites up to DISPLAY_TILE (32 px) for crisp pixel-art look
+for _k in list(TILE_IMAGES.keys()):
+    TILE_IMAGES[_k] = pygame.transform.scale(TILE_IMAGES[_k], (DISPLAY_TILE, DISPLAY_TILE))
+SPRITES = {k: pygame.transform.scale(v, (DISPLAY_TILE, DISPLAY_TILE)) for k, v in SPRITES.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -345,9 +568,6 @@ def carve_hut(world, hx, hy):
 
 
 def carve_market_room(world, mx, my):
-    """A small hidden room (drawn far from the surface map visually, but for
-    simplicity we carve it directly beneath the hut's coordinates on the
-    same grid, accessed only once the trapdoor is open)."""
     w, h = 7, 6
     for y in range(my - 1, my + h + 1):
         for x in range(mx - 1, mx + w + 1):
@@ -355,6 +575,59 @@ def carve_market_room(world, mx, my):
                 x == mx - 1 or x == mx + w or y == my - 1 or y == my + h
             )
             world[y][x] = MARKET_WALL if on_border else MARKET_FLOOR
+
+
+def decorate_world(world, cx, cy, main_radius, hut_x, hut_y):
+    """Add trees, flowers, and a dirt path to the main island."""
+    rng = random.Random(7)
+
+    # --- dirt path from player start to hut entrance ---
+    px, py = cx, cy + 5
+    ex, ey = hut_x + 2, hut_y + 5
+    x, y = px, py
+    while abs(x - ex) > 1 or abs(y - ey) > 1:
+        if abs(x - ex) >= abs(y - ey):
+            x += 1 if ex > x else -1
+        else:
+            y += 1 if ey > y else -1
+        for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx2, ny2 = x + dx, y + dy
+            if 0 <= nx2 < MAP_W and 0 <= ny2 < MAP_H and world[ny2][nx2] == GRASS:
+                world[ny2][nx2] = PATH
+
+    # --- scatter trees (spaced ≥ 4 tiles apart) ---
+    tree_set = set()
+    for _ in range(10000):
+        tx = rng.randint(0, MAP_W - 1)
+        ty = rng.randint(0, MAP_H - 1)
+        if world[ty][tx] != GRASS:
+            continue
+        dist_c = ((tx - cx) ** 2 + (ty - cy) ** 2) ** 0.5
+        if dist_c < 12 or dist_c > main_radius * 0.92:
+            continue
+        if ((tx - hut_x) ** 2 + (ty - hut_y) ** 2) ** 0.5 < 12:
+            continue
+        if any(((tx - ox) ** 2 + (ty - oy) ** 2) < 16 for ox, oy in tree_set):
+            continue
+        world[ty][tx] = TREE
+        tree_set.add((tx, ty))
+        if len(tree_set) >= 65:
+            break
+
+    # --- scatter flowers ---
+    flower_count = 0
+    for _ in range(5000):
+        fx = rng.randint(0, MAP_W - 1)
+        fy = rng.randint(0, MAP_H - 1)
+        if world[fy][fx] != GRASS:
+            continue
+        dist_c = ((fx - cx) ** 2 + (fy - cy) ** 2) ** 0.5
+        if dist_c > main_radius * 0.85 or dist_c < 4:
+            continue
+        world[fy][fx] = FLOWER
+        flower_count += 1
+        if flower_count >= 120:
+            break
 
 
 # ---------------------------------------------------------------------------
@@ -533,17 +806,63 @@ def draw_text(surface, text, pos, font=FONT, color=(255, 255, 255)):
 
 
 def draw_hud(surface, state: GameState, player: Player):
-    pygame.draw.rect(surface, (15, 15, 20), (0, SCREEN_H, SCREEN_W, HUD_HEIGHT))
-    draw_text(
-        surface,
-        f"Chicken: {state.chickens}  Materials: {state.materials}  "
-        f"Gold: {state.money}  Sold: {state.chickens_sold}/{CHICKENS_TO_WIN}  "
-        f"HP: {player.health}",
-        (8, SCREEN_H + 6),
-    )
-    trust_text = "Noah trusts you" if state.noah_trust else "Noah is suspicious of you"
-    trust_color = (90, 220, 110) if state.noah_trust else (230, 80, 80)
-    draw_text(surface, trust_text, (8, SCREEN_H + 28), color=trust_color)
+    hud_y = SCREEN_H
+    # Dark parchment panel
+    pygame.draw.rect(surface, (22, 18, 32), (0, hud_y, SCREEN_W, HUD_HEIGHT))
+    pygame.draw.line(surface, (90, 65, 115), (0, hud_y), (SCREEN_W, hud_y), 2)
+
+    # --- Health bar ---
+    bx, by = 10, hud_y + 10
+    bw, bh = 180, 16
+    pygame.draw.rect(surface, (55, 18, 18), (bx, by, bw, bh))
+    hp_w = int(bw * max(0, player.health) / player.max_health)
+    bar_col = (210, 45, 45) if player.health / player.max_health > 0.25 else (255, 100, 20)
+    if hp_w > 0:
+        pygame.draw.rect(surface, bar_col, (bx, by, hp_w, bh))
+    pygame.draw.rect(surface, (180, 130, 130), (bx, by, bw, bh), 1)
+    hp_surf = HUD_FONT.render(f"HP  {player.health}/{player.max_health}", True, (255, 225, 225))
+    surface.blit(hp_surf, (bx + 4, by + 2))
+
+    # --- Item stats row ---
+    sx, sy = 10, hud_y + 34
+    # Chicken (golden circle)
+    pygame.draw.circle(surface, (248, 195, 45), (sx + 7, sy + 7), 6)
+    pygame.draw.circle(surface, (200, 148, 30), (sx + 7, sy + 7), 6, 1)
+    surface.blit(HUD_FONT.render(f"x{state.chickens}", True, (255, 240, 185)), (sx + 16, sy + 1))
+
+    # Materials (blue square)
+    mx = sx + 58
+    pygame.draw.rect(surface, (80, 175, 225), (mx, sy + 1, 12, 12))
+    pygame.draw.rect(surface, (50, 130, 185), (mx, sy + 1, 12, 12), 1)
+    surface.blit(HUD_FONT.render(f"x{state.materials}", True, (185, 230, 255)), (mx + 15, sy + 1))
+
+    # Gold (yellow diamond)
+    gx = mx + 65
+    pygame.draw.polygon(surface, (255, 195, 35),
+                        [(gx+6, sy), (gx+12, sy+6), (gx+6, sy+12), (gx, sy+6)])
+    pygame.draw.polygon(surface, (200, 148, 20),
+                        [(gx+6, sy), (gx+12, sy+6), (gx+6, sy+12), (gx, sy+6)], 1)
+    surface.blit(HUD_FONT.render(f"{state.money}g", True, (255, 225, 110)), (gx + 16, sy + 1))
+
+    # Sold progress
+    px2 = gx + 68
+    sold_col = (100, 235, 115) if state.chickens_sold < CHICKENS_TO_WIN else (255, 215, 50)
+    surface.blit(HUD_FONT.render(f"Sold:{state.chickens_sold}/{CHICKENS_TO_WIN}", True, sold_col),
+                 (px2, sy + 1))
+
+    # Trust indicator (right side)
+    if state.noah_trust:
+        tc, tt = (80, 225, 110), "Noah trusts you"
+        pygame.draw.circle(surface, tc, (SCREEN_W - 170, hud_y + 22), 5)
+    else:
+        tc, tt = (230, 80, 80), "Noah suspicious!"
+        pts = [(SCREEN_W - 170, hud_y + 16), (SCREEN_W - 175, hud_y + 28), (SCREEN_W - 165, hud_y + 28)]
+        pygame.draw.polygon(surface, tc, pts)
+    surface.blit(HUD_FONT.render(tt, True, tc), (SCREEN_W - 158, hud_y + 16))
+
+    # Controls hint
+    hint = "E:talk/interact  G:give  B:glider  SPC:attack  Q:return"
+    surface.blit(FONT.render(hint, True, (110, 95, 145)), (10, hud_y + HUD_HEIGHT - 17))
 
 
 def show_message_box(surface, message):
@@ -582,7 +901,7 @@ def show_win_screen(surface):
 # Rendering: only draw tiles within the visibility radius (camera-based)
 # ---------------------------------------------------------------------------
 def render_world(world, player, npcs_visible):
-    screen.fill((0, 0, 0))
+    screen.fill((15, 10, 22))
 
     cam_tile_x = int(player.x) - VIEW_RADIUS_TILES
     cam_tile_y = int(player.y) - VIEW_RADIUS_TILES
@@ -597,17 +916,17 @@ def render_world(world, player, npcs_visible):
                 continue
             tile_id = world[world_ty][world_tx]
             img = TILE_IMAGES.get(tile_id, TILE_IMAGES[WATER])
-            screen.blit(img, (screen_tx * TILE, screen_ty * TILE))
+            screen.blit(img, (screen_tx * DISPLAY_TILE, screen_ty * DISPLAY_TILE))
 
-    # player is always drawn at the screen center
-    px = (player.x - cam_tile_x) * TILE - TILE / 2
-    py = (player.y - cam_tile_y) * TILE - TILE / 2
+    # player always at screen centre
+    px = (player.x - cam_tile_x) * DISPLAY_TILE - DISPLAY_TILE / 2
+    py = (player.y - cam_tile_y) * DISPLAY_TILE - DISPLAY_TILE / 2
 
-    # draw NPCs/werewolves relative to camera
+    # NPCs / enemies relative to camera
     for entity in npcs_visible:
-        ex = (entity.x - cam_tile_x) * TILE - TILE / 2
-        ey = (entity.y - cam_tile_y) * TILE - TILE / 2
-        if -TILE <= ex <= SCREEN_W and -TILE <= ey <= SCREEN_H:
+        ex = (entity.x - cam_tile_x) * DISPLAY_TILE - DISPLAY_TILE / 2
+        ey = (entity.y - cam_tile_y) * DISPLAY_TILE - DISPLAY_TILE / 2
+        if -DISPLAY_TILE <= ex <= SCREEN_W and -DISPLAY_TILE <= ey <= SCREEN_H:
             screen.blit(entity.sprite, (ex, ey))
 
     screen.blit(player.sprite, (px, py))
@@ -636,6 +955,9 @@ def main():
     carve_market_room(world, market_x, market_y)
     merchant_pos = (market_x + 3, market_y + 3)
     merchant = Merchant(*merchant_pos)
+
+    # Decorate the main island with trees, flowers, and a dirt path
+    decorate_world(world, cx, cy, main_radius, hut_x, hut_y)
 
     # Noah stands near the main island center
     noah = Noah(cx - 5, cy)
@@ -789,9 +1111,6 @@ def main():
 
         render_world(world, player, visible_npcs)
         draw_hud(screen, state, player)
-
-        hint = "E: interact   G: give chicken to Noah   B: build glider   SPACE: attack"
-        draw_text(screen, hint, (8, SCREEN_H + HUD_HEIGHT - 18), color=(210, 170, 40))
 
         pygame.display.flip()
 
