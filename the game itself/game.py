@@ -1180,7 +1180,7 @@ class Entity:
 class Player(Entity):
     def __init__(self, x, y):
         super().__init__(x, y, SPRITES["kyle"])
-        self.speed = 0.18  # tiles per frame
+        self.speed = 10.8  # tiles per second
         self.health = 100
         self.max_health = 100
 
@@ -1199,16 +1199,16 @@ class Werewolf(Entity):
     def __init__(self, x, y, home_radius_tiles, center):
         super().__init__(x, y, SPRITES["werewolf"])
         self.health = 40
-        self.speed = 0.07
+        self.speed = 4.2  # tiles per second
         self.state = Werewolf.STATE_WANDER
         self.wander_dir = pygame.Vector2(random.choice([-1, 0, 1]), random.choice([-1, 0, 1]))
-        self.wander_timer = random.randint(30, 90)
+        self.wander_timer = random.uniform(0.5, 1.5)  # seconds
         self.detect_radius = 7  # tiles
         self.has_chicken = True
         self.center = center
         self.home_radius = home_radius_tiles
 
-    def update(self, player):
+    def update(self, player, dt):
         dist = ((self.x - player.x) ** 2 + (self.y - player.y) ** 2) ** 0.5
         self.state = Werewolf.STATE_CHASE if dist < self.detect_radius else Werewolf.STATE_WANDER
 
@@ -1217,23 +1217,23 @@ class Werewolf(Entity):
             length = (dx ** 2 + dy ** 2) ** 0.5
             if length > 0:
                 dx, dy = dx / length, dy / length
-            self.x += dx * self.speed
-            self.y += dy * self.speed
+            self.x += dx * self.speed * dt
+            self.y += dy * self.speed * dt
         else:
-            self.wander_timer -= 1
+            self.wander_timer -= dt
             if self.wander_timer <= 0:
                 self.wander_dir = pygame.Vector2(
                     random.choice([-1, 0, 1]), random.choice([-1, 0, 1])
                 )
-                self.wander_timer = random.randint(30, 90)
-            self.x += self.wander_dir.x * self.speed
-            self.y += self.wander_dir.y * self.speed
+                self.wander_timer = random.uniform(0.5, 1.5)
+            self.x += self.wander_dir.x * self.speed * dt
+            self.y += self.wander_dir.y * self.speed * dt
 
         # keep roughly on its home island
         cx, cy = self.center
         if ((self.x - cx) ** 2 + (self.y - cy) ** 2) ** 0.5 > self.home_radius:
-            self.x += (cx - self.x) * 0.05
-            self.y += (cy - self.y) * 0.05
+            self.x += (cx - self.x) * min(1.0, 3 * dt)
+            self.y += (cy - self.y) * min(1.0, 3 * dt)
 
     def take_damage(self, amount):
         self.health -= amount
@@ -1315,7 +1315,7 @@ def draw_hud(surface, state: GameState, player: Player):
     if hp_w > 0:
         pygame.draw.rect(surface, bar_col, (bx, by, hp_w, bh))
     pygame.draw.rect(surface, (180, 130, 130), (bx, by, bw, bh), 1)
-    hp_surf = HUD_FONT.render(f"HP  {player.health}/{player.max_health}", True, (255, 225, 225))
+    hp_surf = HUD_FONT.render(f"HP  {int(player.health)}/{player.max_health}", True, (255, 225, 225))
     surface.blit(hp_surf, (bx + 4, by + 2))
 
     # --- Item stats row ---
@@ -1423,34 +1423,42 @@ def show_win_screen(surface):
 def render_world(world, player, npcs_visible):
     screen.fill((15, 10, 22))
 
-    cam_tile_x = int(player.x) - VIEW_RADIUS_TILES
-    cam_tile_y = int(player.y) - VIEW_RADIUS_TILES
+    # Fractional camera: player sprite is always centered on screen.
+    # cam_pixel_x/y = world-pixel coordinate of the viewport's top-left corner.
+    cam_pixel_x = player.x * DISPLAY_TILE - SCREEN_W / 2
+    cam_pixel_y = player.y * DISPLAY_TILE - SCREEN_H / 2
 
-    for screen_ty in range(VIEW_TILES_ACROSS):
-        world_ty = cam_tile_y + screen_ty
+    # First tile that touches the viewport (floor so partial left/top tiles show)
+    first_tile_x = math.floor(cam_pixel_x / DISPLAY_TILE)
+    first_tile_y = math.floor(cam_pixel_y / DISPLAY_TILE)
+
+    # +1 extra tile per axis so partial tiles at the right/bottom edges are drawn
+    for ty_offset in range(VIEW_TILES_ACROSS + 1):
+        world_ty = first_tile_y + ty_offset
         if not (0 <= world_ty < MAP_H):
             continue
-        for screen_tx in range(VIEW_TILES_ACROSS):
-            world_tx = cam_tile_x + screen_tx
+        for tx_offset in range(VIEW_TILES_ACROSS + 1):
+            world_tx = first_tile_x + tx_offset
             if not (0 <= world_tx < MAP_W):
                 continue
             tile_id = world[world_ty][world_tx]
             img = TILE_IMAGES.get(tile_id, TILE_IMAGES[WATER])
-            screen.blit(img, (screen_tx * DISPLAY_TILE, screen_ty * DISPLAY_TILE))
+            sx = world_tx * DISPLAY_TILE - cam_pixel_x
+            sy = world_ty * DISPLAY_TILE - cam_pixel_y
+            screen.blit(img, (sx, sy))
 
-    # player always at screen centre
-    px = (player.x - cam_tile_x) * DISPLAY_TILE - DISPLAY_TILE / 2
-    py = (player.y - cam_tile_y) * DISPLAY_TILE - DISPLAY_TILE / 2
+    # Player sprite is always centered on screen
+    px = SCREEN_W / 2 - DISPLAY_TILE / 2
+    py = SCREEN_H / 2 - DISPLAY_TILE / 2
 
-    # NPCs / enemies relative to camera
+    # NPCs / enemies relative to the fractional camera
     for entity in npcs_visible:
-        ex = (entity.x - cam_tile_x) * DISPLAY_TILE - DISPLAY_TILE / 2
-        ey = (entity.y - cam_tile_y) * DISPLAY_TILE - DISPLAY_TILE / 2
+        ex = (entity.x - player.x) * DISPLAY_TILE + SCREEN_W / 2 - DISPLAY_TILE / 2
+        ey = (entity.y - player.y) * DISPLAY_TILE + SCREEN_H / 2 - DISPLAY_TILE / 2
         if -DISPLAY_TILE <= ex <= SCREEN_W and -DISPLAY_TILE <= ey <= SCREEN_H:
             screen.blit(entity.sprite, (ex, ey))
 
     screen.blit(player.sprite, (px, py))
-    return cam_tile_x, cam_tile_y
 
 
 # ---------------------------------------------------------------------------
@@ -1506,7 +1514,8 @@ def main():
 
     running = True
     while running:
-        clock.tick(FPS)
+        dt = clock.tick(FPS) / 1000.0
+        dt = min(dt, 0.05)  # cap to prevent huge jumps after lag spikes
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -1592,13 +1601,13 @@ def main():
         keys = pygame.key.get_pressed()
         dx = dy = 0.0
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-            dx = -player.speed
+            dx = -player.speed * dt
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-            dx = player.speed
+            dx = player.speed * dt
         if keys[pygame.K_UP] or keys[pygame.K_w]:
-            dy = -player.speed
+            dy = -player.speed * dt
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-            dy = player.speed
+            dy = player.speed * dt
 
         if dx and dy:  # normalize diagonal movement
             dx *= 0.7071
@@ -1619,10 +1628,10 @@ def main():
 
         # ---------------- werewolves ----------------
         for wolf in werewolves:
-            wolf.update(player)
+            wolf.update(player, dt)
             dist = ((player.x - wolf.x) ** 2 + (player.y - wolf.y) ** 2) ** 0.5
             if dist < 0.8:
-                player.health -= 1
+                player.health -= 60 * dt
 
         if state.game_over:
             running = False
