@@ -58,6 +58,7 @@ FPS = 60
 FONT     = pygame.font.SysFont("monospace", 13)
 BIG_FONT = pygame.font.SysFont("monospace", 24, bold=True)
 HUD_FONT = pygame.font.SysFont("monospace", 12, bold=True)
+DIALOGUE_FONT = pygame.font.SysFont("monospace", 19, bold=True)
 
 CHICKENS_TO_WIN = 8
 
@@ -119,43 +120,35 @@ def _make_tile(rows, palette):
 
 
 # ---- Terrain tile art ------------------------------------------------------
-_GRASS = _make_tile([
-    "aababcaababcaabb",
-    "baabcaabaababcba",
-    "cababababaaabcaa",
-    "aacbaaabbbcaaacb",
-    "bbaacaababaabcaa",
-    "aababcabaacbaabb",
-    "cbaaababcbaabaac",
-    "ababcaaababcaabb",
-    "baacacababcaaabb",
-    "acabaababcaaaaba",
-    "aabcaaaababcaaab",
-    "cbababcaaababcab",
-    "ababcaaabababcaa",
-    "baababcaababaabc",
-    "caababcaaababcab",
-    "aababcaaababcaab",
-], {"a": (88,172,95), "b": (102,195,112), "c": (70,148,78)})
+def _make_smooth_grass(base, light, dark):
+    """A smoother grass tile: mostly solid base color with a few soft,
+    clustered highlight/shadow patches instead of per-pixel dither noise."""
+    surf = pygame.Surface((TILE, TILE))
+    surf.fill(base)
+    rng = random.Random(hash((base, light, dark)) & 0xFFFFFFFF)
+    # A couple of soft light patches
+    for _ in range(3):
+        cx_, cy_ = rng.randint(2, 13), rng.randint(2, 13)
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                if abs(dx) + abs(dy) <= 1:
+                    x, y = cx_ + dx, cy_ + dy
+                    if 0 <= x < TILE and 0 <= y < TILE:
+                        surf.set_at((x, y), light)
+    # A couple of soft shadow patches
+    for _ in range(2):
+        cx_, cy_ = rng.randint(2, 13), rng.randint(2, 13)
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                if abs(dx) + abs(dy) <= 1:
+                    x, y = cx_ + dx, cy_ + dy
+                    if 0 <= x < TILE and 0 <= y < TILE:
+                        surf.set_at((x, y), dark)
+    return surf
 
-_WOLF_GRASS = _make_tile([
-    "aababcaababcaabb",
-    "baabcaabaababcba",
-    "cababababaaabcaa",
-    "aacbaaabbbcaaacb",
-    "bbaacaababaabcaa",
-    "aababcabaacbaabb",
-    "cbaaababcbaabaac",
-    "ababcaaababcaabb",
-    "baacacababcaaabb",
-    "acabaababcaaaaba",
-    "aabcaaaababcaaab",
-    "cbababcaaababcab",
-    "ababcaaabababcaa",
-    "baababcaababaabc",
-    "caababcaaababcab",
-    "aababcaaababcaab",
-], {"a": (58,130,68), "b": (72,148,82), "c": (45,110,55)})
+_GRASS = _make_smooth_grass((92, 178, 100), (108, 198, 118), (76, 156, 84))
+
+_WOLF_GRASS = _make_smooth_grass((62, 134, 72), (74, 152, 84), (48, 112, 58))
 
 _WATER = _make_tile([
     "WWwWbWwWWwbWWwWW",
@@ -339,8 +332,10 @@ def _make_flower():
     return img
 
 def _make_tree():
-    """Round tree canopy viewed from above (SRCALPHA)."""
-    return make_surface([
+    """Round tree canopy viewed from above, blended onto a grass base so the
+    transparent corners don't show through as black."""
+    img = _GRASS.copy()
+    rows = [
         "....sDDDDDDs....",
         "...DGGgGGGGGDs..",
         "..DGGGGGGGGGGDs.",
@@ -357,15 +352,19 @@ def _make_tree():
         "...sDDGGGGDDs...",
         "....sssDDsss....",
         "................",
-    ], {
+    ]
+    overlay = make_surface(rows, {
         ".": None,
         "D": (28,100,35), "G": (50,145,58), "g": (72,178,82),
         "h": (95,210,108), "t": (100,70,38), "s": (18,78,24),
     })
+    img.blit(overlay, (0, 0))
+    return img
 
 def _make_tree2():
-    """An autumn/golden-colored canopy variant, for visual variety."""
-    return make_surface([
+    """An autumn/golden-colored canopy variant, blended onto a grass base."""
+    img = _GRASS.copy()
+    rows = [
         "....sDDDDDDs....",
         "...DGGgGGGGGDs..",
         "..DGGGGGGGGGGDs.",
@@ -382,11 +381,14 @@ def _make_tree2():
         "...sDDGGGGDDs...",
         "....sssDDsss....",
         "................",
-    ], {
+    ]
+    overlay = make_surface(rows, {
         ".": None,
         "D": (140,80,20), "G": (205,140,40), "g": (225,170,60),
         "h": (240,195,90), "t": (100,70,38), "s": (95,55,15),
     })
+    img.blit(overlay, (0, 0))
+    return img
 
 def _make_rock():
     """A grey boulder sitting on grass, impassable."""
@@ -657,27 +659,42 @@ def make_kyle():
 
 
 def make_noah():
+    """Wild-haired survivor look, based on a reference image: messy brown
+    hair, beard, green eyes, dark open vest over a tan torso, and a spear
+    with a leaf-wrapped tip held to his side."""
     p = {
-        ".": None, "k": (62, 46, 30), "f": (228, 192, 162),
-        "g": (52, 145, 82), "d": (32, 102, 58), "w": (255, 255, 255),
-        "n": (30, 22, 12),
+        ".": None,
+        "k": (58, 42, 28),    # hair
+        "K": (45, 32, 20),    # hair shadow
+        "f": (212, 168, 128),  # face/skin
+        "F": (185, 142, 105),  # skin shadow
+        "e": (60, 150, 80),   # green eyes
+        "b": (50, 38, 26),    # beard
+        "v": (40, 55, 95),    # dark blue vest
+        "V": (30, 42, 75),    # vest shadow
+        "t": (190, 150, 105),  # tan torso/undershirt
+        "p": (120, 95, 65),   # pants
+        "P": (95, 75, 50),    # pants shadow
+        "s": (150, 150, 155),  # spear head (metal)
+        "w": (100, 70, 40),   # spear shaft (wood)
+        "l": (70, 150, 60),   # leaf
     }
     rows = [
-        "....nnnnnnnn....",
-        "...nkkkkkkkkn...",
-        "...kfffffffkk...",
-        "..kffwf.wfffk...",
-        "...fffffffff....",
-        "....ffffffff....",
-        "...gggggggggg...",
-        "..gggggggggggg..",
-        "..gggggggggggg..",
-        "..ggdddddddgg...",
-        "..gg........gg..",
-        "..gg........gg..",
-        "..kk........kk..",
-        "..nn........nn..",
-        "................",
+        "....kKkk.kk.....",
+        "...kkkkkkkkKk...",
+        "..kkkkkkkkkkkk..",
+        "..kKffffffFkk...",
+        ".sKffeffeFfk....",
+        "lwKffffffFk.....",
+        ".w.bbbbbbbk.....",
+        "w..bbbbbbb......",
+        "w..vvVtttvv.....",
+        "..vvvVtttVvv....",
+        "..vvVVVVvv......",
+        "...ppFFpp.......",
+        "..ppP..Ppp......",
+        "..pp....pp......",
+        "..PP....PP......",
         "................",
     ]
     return make_surface(rows, p)
@@ -1259,11 +1276,28 @@ class Merchant(Entity):
 # ---------------------------------------------------------------------------
 # UI helpers
 # ---------------------------------------------------------------------------
-def draw_text(surface, text, pos, font=FONT, color=(255, 255, 255)):
+def draw_text(surface, text, pos, font=FONT, color=(255, 255, 255), max_width=None):
+    """Renders text at pos. If max_width is given, long lines are word-wrapped
+    to fit within that pixel width (in addition to respecting '\\n')."""
     x, y = pos
     for line in text.split("\n"):
-        surface.blit(font.render(line, True, color), (x, y))
-        y += font.get_height() + 2
+        if max_width is None:
+            surface.blit(font.render(line, True, color), (x, y))
+            y += font.get_height() + 2
+            continue
+
+        words = line.split(" ")
+        current = ""
+        for word in words:
+            candidate = (current + " " + word).strip()
+            if font.size(candidate)[0] <= max_width or not current:
+                current = candidate
+            else:
+                surface.blit(font.render(current, True, color), (x, y))
+                y += font.get_height() + 4
+                current = word
+        surface.blit(font.render(current, True, color), (x, y))
+        y += font.get_height() + 4
 
 
 def draw_hud(surface, state: GameState, player: Player):
@@ -1327,10 +1361,35 @@ def draw_hud(surface, state: GameState, player: Player):
 
 
 def show_message_box(surface, message):
-    box = pygame.Rect(40, SCREEN_H - 130, SCREEN_W - 80, 110)
+    box_x, box_margin = 30, 30
+    box_w = SCREEN_W - box_margin * 2
+    text_max_width = box_w - 28  # leave padding on both sides
+
+    # Pre-compute wrapped line count so the box is tall enough for the text.
+    line_count = 0
+    for raw_line in message.split("\n"):
+        words = raw_line.split(" ")
+        current = ""
+        for word in words:
+            candidate = (current + " " + word).strip()
+            if DIALOGUE_FONT.size(candidate)[0] <= text_max_width or not current:
+                current = candidate
+            else:
+                line_count += 1
+                current = word
+        line_count += 1
+
+    line_height = DIALOGUE_FONT.get_height() + 4
+    text_block_height = line_count * line_height
+    box_h = text_block_height + 56  # padding + room for the "press any key" hint
+    box_h = max(box_h, 90)
+    box_h = min(box_h, SCREEN_H - 40)  # never grow taller than the screen allows
+    box_y = max(10, SCREEN_H - box_h - 10)
+
+    box = pygame.Rect(box_x, box_y, box_w, box_h)
     pygame.draw.rect(surface, (10, 10, 15), box)
     pygame.draw.rect(surface, (255, 255, 255), box, 2)
-    draw_text(surface, message, (box.x + 14, box.y + 14))
+    draw_text(surface, message, (box.x + 14, box.y + 14), font=DIALOGUE_FONT, max_width=text_max_width)
     draw_text(surface, "(press any key)", (box.x + 14, box.y + box.height - 24), color=(210, 170, 40))
     pygame.display.flip()
 
