@@ -32,6 +32,7 @@ Controls:
 import pygame
 import random
 import sys
+import math
 
 # ---------------------------------------------------------------------------
 # Core constants
@@ -77,8 +78,22 @@ WOLF_GRASS    = 10
 TREE          = 11   # impassable tree canopy
 FLOWER        = 12   # walkable grass with decorative flower
 PATH          = 13   # dirt path (walkable)
+ROCK          = 14   # impassable boulder
+PLAZA         = 15   # stone plaza tile (town square)
+FOUNTAIN      = 16   # impassable fountain centerpiece
+DOCK          = 17   # wooden dock planks (walkable, over water)
+VILLAGE_WALL  = 18   # second building's wall
+VILLAGE_FLOOR = 19   # second building's floor
+TREE2         = 20   # alternate-colored impassable tree canopy
+DEAD_TREE     = 21   # impassable bare/dead tree, for werewolf islands
+WOLF_ROCK     = 22   # impassable jagged dark boulder, for werewolf islands
+BONES         = 23   # walkable wolf-grass with scattered bones (decorative)
+DARK_PATCH    = 24   # walkable scorched/dark grass patch (decorative)
 
-SOLID_TILES = {HUT_WALL, MARKET_WALL, WATER, TREE}
+SOLID_TILES = {
+    HUT_WALL, MARKET_WALL, WATER, TREE, ROCK, FOUNTAIN, VILLAGE_WALL, TREE2,
+    DEAD_TREE, WOLF_ROCK,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +363,242 @@ def _make_tree():
         "h": (95,210,108), "t": (100,70,38), "s": (18,78,24),
     })
 
+def _make_tree2():
+    """An autumn/golden-colored canopy variant, for visual variety."""
+    return make_surface([
+        "....sDDDDDDs....",
+        "...DGGgGGGGGDs..",
+        "..DGGGGGGGGGGDs.",
+        ".DGGGGGGGGGGGGDs",
+        ".DGGGhGGGGhGGGGs",
+        ".DGGGGGttGGGGGGs",
+        ".DGGGGttttGGGGGs",
+        ".DGGGGGttGGGGGGs",
+        ".DGGGGGGGGGGGGGs",
+        ".DGGhGGGGGGhGGGs",
+        ".DGGGGGGGGGGGGGs",
+        ".DGGGGGGGGGGGGDs",
+        "..DGGGGGGGGGGDs.",
+        "...sDDGGGGDDs...",
+        "....sssDDsss....",
+        "................",
+    ], {
+        ".": None,
+        "D": (140,80,20), "G": (205,140,40), "g": (225,170,60),
+        "h": (240,195,90), "t": (100,70,38), "s": (95,55,15),
+    })
+
+def _make_rock():
+    """A grey boulder sitting on grass, impassable."""
+    img = _GRASS.copy()
+    rows = [
+        "....sssssss....",
+        "...sRRRRRRRs...",
+        "..sRRrRRRrRRs..",
+        ".sRRRRRRRRRRRs.",
+        ".sRrRRRRRRrRRs.",
+        "sRRRRRRRRRRRRRs",
+        "sRRRrRRRRRrRRRs",
+        "sRRRRRRRRRRRRRs",
+        ".sRRRRrRRRRRRs.",
+        ".sRRRRRRRRRRs..",
+        "..ssRRRRRRsss..",
+        "...sssssssss...",
+        "................",
+        "................",
+        "................",
+        "................",
+    ]
+    palette = {".": None, "s": (70,65,68), "R": (130,128,132), "r": (155,152,158)}
+    overlay = make_surface(rows, palette)
+    img.blit(overlay, (0, 0))
+    return img
+
+def _make_plaza():
+    """Stone-paved plaza tile, walkable, for the town square."""
+    return _make_tile([
+        "MmMMMmMMmMMMmMMm",
+        "mMmMMmMMmMMmMMmM",
+        "MMMmMMmMMMmMMmMM",
+        "mMMMmMMmMMMmMMmM",
+        "MmMMmMMMmMMmMMMm",
+        "MMmMMMmMMmMMMmMM",
+        "mMMmMMMmMMmMMMmM",
+        "MMMmMMmMMMmMMmMM",
+        "mMmMMmMMmMMmMMmM",
+        "MMMmMMmMMMmMMmMM",
+        "mMMMmMMmMMMmMMmM",
+        "MmMMmMMMmMMmMMMm",
+        "MMmMMMmMMmMMMmMM",
+        "mMMmMMMmMMmMMMmM",
+        "MMMmMMmMMMmMMmMM",
+        "mMmMMmMMmMMmMMmM",
+    ], {"M": (168,160,148), "m": (148,140,130)})
+
+def _make_fountain():
+    """An impassable decorative fountain centerpiece, sits on plaza tiles."""
+    img = _make_plaza()
+    rows = [
+        "................",
+        "...sssssssss....",
+        "..sBBBBBBBBBs...",
+        ".sBBwwwwwwwBBs..",
+        ".sBwwwwwwwwwBs..",
+        ".sBwwgwwwgwwBs..",
+        ".sBwwwwwwwwwBs..",
+        ".sBwwwgwwwwwBs..",
+        ".sBwwwwwwwwwBs..",
+        ".sBBwwwwwwwBBs..",
+        "..sBBBBBBBBBs...",
+        "...sssssssss....",
+        "................",
+        "................",
+        "................",
+        "................",
+    ]
+    overlay = make_surface(rows, {
+        ".": None, "s": (95,90,88), "B": (150,148,150), "w": (95,165,225), "g": (200,225,250),
+    })
+    img.blit(overlay, (0, 0))
+    return img
+
+def _make_dock():
+    """Wooden dock planks, walkable, used to extend paths out over water."""
+    return _make_tile([
+        "wwwwwwwwwwwwwwww",
+        "DDDDDDDDDDDDDDDD",
+        "wwwwwwwwwwwwwwww",
+        "wwwwwwwwwwwwwwww",
+        "DDDDDDDDDDDDDDDD",
+        "wwwwwwwwwwwwwwww",
+        "wwwwwwwwwwwwwwww",
+        "DDDDDDDDDDDDDDDD",
+        "wwwwwwwwwwwwwwww",
+        "wwwwwwwwwwwwwwww",
+        "DDDDDDDDDDDDDDDD",
+        "wwwwwwwwwwwwwwww",
+        "wwwwwwwwwwwwwwww",
+        "DDDDDDDDDDDDDDDD",
+        "wwwwwwwwwwwwwwww",
+        "wwwwwwwwwwwwwwww",
+    ], {"w": (172,132,80), "D": (130,95,55)})
+
+def _make_village_floor():
+    img = _HUT_FLOOR.copy()
+    return img
+
+def _make_village_wall():
+    """A second building's wall, in a different stone tone than the merchant's hut."""
+    return _make_tile([
+        "GgGGGdGgGGGdGgGG",
+        "dGgGGGdGgGGGdGgG",
+        "GGdGgGGGdGgGGGdG",
+        "gGGGdGgGGGdGgGGG",
+        "GgGGGdGgGGGdGgGG",
+        "dGgGGGdGgGGGdGgG",
+        "GGdGgGGGdGgGGGdG",
+        "gGGGdGgGGGdGgGGG",
+        "GgGGGdGgGGGdGgGG",
+        "dGgGGGdGgGGGdGgG",
+        "GGdGgGGGdGgGGGdG",
+        "gGGGdGgGGGdGgGGG",
+        "GgGGGdGgGGGdGgGG",
+        "dGgGGGdGgGGGdGgG",
+        "GGdGgGGGdGgGGGdG",
+        "gGGGdGgGGGdGgGGG",
+    ], {"G": (120,118,115), "g": (140,138,135), "d": (95,92,88)})
+
+def _make_dead_tree():
+    """A bare, leafless tree -- impassable, used on werewolf islands for a
+    wilder/more menacing feel than the main island's lush canopies."""
+    img = _WOLF_GRASS.copy()
+    rows = [
+        "................",
+        "................",
+        ".......t........",
+        "......ttt.......",
+        "....t..t..t.....",
+        ".....t.t.t......",
+        "......ttt.......",
+        "....tt.t.tt.....",
+        ".....tttt.......",
+        "......ttt.......",
+        ".......t........",
+        ".......t........",
+        "......ttt.......",
+        ".......t........",
+        ".......t........",
+        "................",
+    ]
+    overlay = make_surface(rows, {".": None, "t": (75, 60, 48)})
+    img.blit(overlay, (0, 0))
+    return img
+
+def _make_wolf_rock():
+    """A jagged, dark boulder for werewolf islands -- sharper and darker
+    than the main island's rounded rocks, to feel more dangerous."""
+    img = _WOLF_GRASS.copy()
+    rows = [
+        "................",
+        "......s.ss......",
+        ".....sRRRRs.....",
+        "....sRrRRRRs....",
+        "...sRRRRrRRRs...",
+        "..sRRrRRRRRRRs..",
+        "..sRRRRRrRRRRs..",
+        "..sRRRRRRRrRRs..",
+        "...sRrRRRRRRs...",
+        "....sRRRrRRs....",
+        ".....sRRRRs.....",
+        "......sssss.....",
+        "................",
+        "................",
+        "................",
+        "................",
+    ]
+    palette = {".": None, "s": (35,32,34), "R": (78,75,80), "r": (95,92,98)}
+    overlay = make_surface(rows, palette)
+    img.blit(overlay, (0, 0))
+    return img
+
+def _make_bones():
+    """Wolf-grass with a scattered bone pile -- walkable decoration hinting
+    at past victims."""
+    img = _WOLF_GRASS.copy()
+    rows = [
+        "................",
+        "................",
+        "....b.......b...",
+        "...bWb.....bWb..",
+        "....b...WW..b...",
+        ".......WbbW.....",
+        "......WbbbbW....",
+        ".b...WbbbbbW..b.",
+        "bWb...WbbbW..bWb",
+        ".b.....WW....b..",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+    ]
+    palette = {".": None, "W": (225, 220, 205), "b": (200, 195, 175)}
+    overlay = make_surface(rows, palette)
+    img.blit(overlay, (0, 0))
+    return img
+
+def _make_dark_patch():
+    """A scorched/dark patch of wolf-grass -- walkable, purely decorative,
+    suggests werewolf activity (old fire pit, claw-torn earth, etc)."""
+    img = _WOLF_GRASS.copy()
+    rng = random.Random(99)
+    for _ in range(40):
+        x, y = rng.randint(1, 14), rng.randint(1, 14)
+        shade = rng.randint(25, 45)
+        img.set_at((x, y), (shade, shade - 5, shade - 8))
+    return img
+
 TILE_IMAGES = {
     GRASS:        _GRASS,
     WOLF_GRASS:   _WOLF_GRASS,
@@ -363,6 +614,17 @@ TILE_IMAGES = {
     MAT:          _make_mat(),
     FLOWER:       _make_flower(),
     TREE:         _make_tree(),
+    TREE2:        _make_tree2(),
+    ROCK:         _make_rock(),
+    PLAZA:        _make_plaza(),
+    FOUNTAIN:     _make_fountain(),
+    DOCK:         _make_dock(),
+    VILLAGE_WALL: _make_village_wall(),
+    VILLAGE_FLOOR:_make_village_floor(),
+    DEAD_TREE:    _make_dead_tree(),
+    WOLF_ROCK:    _make_wolf_rock(),
+    BONES:        _make_bones(),
+    DARK_PATCH:   _make_dark_patch(),
 }
 
 
@@ -577,44 +839,147 @@ def carve_market_room(world, mx, my):
             world[y][x] = MARKET_WALL if on_border else MARKET_FLOOR
 
 
-def decorate_world(world, cx, cy, main_radius, hut_x, hut_y):
-    """Add trees, flowers, and a dirt path to the main island."""
-    rng = random.Random(7)
+def carve_village_hut(world, vx, vy, w=4, h=4):
+    """A second, smaller building near the plaza -- just for visual variety,
+    no interaction tied to it (yet)."""
+    for y in range(vy - 1, vy + h + 1):
+        for x in range(vx - 1, vx + w + 1):
+            on_border = (
+                x == vx - 1 or x == vx + w or y == vy - 1 or y == vy + h
+            )
+            world[y][x] = VILLAGE_WALL if on_border else VILLAGE_FLOOR
 
-    # --- dirt path from player start to hut entrance ---
-    px, py = cx, cy + 5
-    ex, ey = hut_x + 2, hut_y + 5
-    x, y = px, py
+
+def carve_plaza(world, cx, cy, radius=9):
+    """Stone town-square plaza with a fountain centerpiece, near the
+    middle of the main island."""
+    for y in range(cy - radius, cy + radius + 1):
+        for x in range(cx - radius, cx + radius + 1):
+            d = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+            if d < radius:
+                world[y][x] = PLAZA
+    fountain_r = 2
+    for y in range(cy - fountain_r, cy + fountain_r + 1):
+        for x in range(cx - fountain_r, cx + fountain_r + 1):
+            d = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+            if d < fountain_r:
+                world[y][x] = FOUNTAIN
+
+
+def carve_dock(world, shore_x, shore_y, direction, length=10):
+    """Extends a straight line of dock tiles out over the water from a
+    point near the shore, in the given (dx, dy) direction."""
+    dx, dy = direction
+    x, y = shore_x, shore_y
+    for _ in range(length):
+        x += dx
+        y += dy
+        if 0 <= x < MAP_W and 0 <= y < MAP_H:
+            world[y][x] = DOCK
+            # widen the dock by one tile perpendicular to its direction
+            px, py = x - dy, y + dx
+            if 0 <= px < MAP_W and 0 <= py < MAP_H:
+                world[py][px] = DOCK
+
+
+def _carve_straight_path(world, start, end):
+    """Carves a walkable PATH line (3 tiles wide) between two points on GRASS."""
+    x, y = start
+    ex, ey = end
     while abs(x - ex) > 1 or abs(y - ey) > 1:
         if abs(x - ex) >= abs(y - ey):
             x += 1 if ex > x else -1
         else:
             y += 1 if ey > y else -1
-        for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
-            nx2, ny2 = x + dx, y + dy
+        for ddx, ddy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx2, ny2 = x + ddx, y + ddy
             if 0 <= nx2 < MAP_W and 0 <= ny2 < MAP_H and world[ny2][nx2] == GRASS:
                 world[ny2][nx2] = PATH
 
-    # --- scatter trees (spaced ≥ 4 tiles apart) ---
-    tree_set = set()
-    for _ in range(10000):
-        tx = rng.randint(0, MAP_W - 1)
-        ty = rng.randint(0, MAP_H - 1)
-        if world[ty][tx] != GRASS:
+
+def decorate_world(world, cx, cy, main_radius, hut_x, hut_y):
+    """Add a town plaza, a second building, a dock, coastal rocks, paths,
+    and tree/flower groves to the main island for visual richness."""
+    rng = random.Random(7)
+
+    # --- town plaza with fountain, placed between player start and hut ---
+    plaza_x, plaza_y = cx, cy - 2
+    carve_plaza(world, plaza_x, plaza_y, radius=9)
+
+    # --- a second village building near the plaza, opposite the merchant hut ---
+    village_x, village_y = cx - 22, cy - 10
+    carve_village_hut(world, village_x, village_y)
+
+    # --- paths connecting player start -> plaza -> hut -> village ---
+    player_start = (cx, cy + 5)
+    _carve_straight_path(world, player_start, (plaza_x, plaza_y + 9))
+    _carve_straight_path(world, (plaza_x, plaza_y), (hut_x + 2, hut_y + 5))
+    _carve_straight_path(world, (plaza_x, plaza_y), (village_x + 2, village_y + 4))
+
+    # --- a dock poking out into the water from the southeast shoreline ---
+    dock_angle = 0.9  # radians, points toward southeast-ish shore
+    shore_x = int(cx + main_radius * 0.95 * math.cos(dock_angle))
+    shore_y = int(cy + main_radius * 0.95 * math.sin(dock_angle))
+    carve_dock(world, shore_x, shore_y, direction=(1, 0), length=12)
+    _carve_straight_path(world, (cx, cy), (shore_x - 3, shore_y))
+
+    # --- scatter rocks near the coastline (echoes a rocky/canyon edge) ---
+    rock_set = set()
+    for _ in range(8000):
+        rx = rng.randint(0, MAP_W - 1)
+        ry = rng.randint(0, MAP_H - 1)
+        if world[ry][rx] != GRASS and world[ry][rx] != SAND:
             continue
-        dist_c = ((tx - cx) ** 2 + (ty - cy) ** 2) ** 0.5
-        if dist_c < 12 or dist_c > main_radius * 0.92:
+        dist_c = ((rx - cx) ** 2 + (ry - cy) ** 2) ** 0.5
+        if not (main_radius * 0.75 < dist_c < main_radius * 0.98):
             continue
-        if ((tx - hut_x) ** 2 + (ty - hut_y) ** 2) ** 0.5 < 12:
+        if any(((rx - ox) ** 2 + (ry - oy) ** 2) < 30 for ox, oy in rock_set):
             continue
-        if any(((tx - ox) ** 2 + (ty - oy) ** 2) < 16 for ox, oy in tree_set):
-            continue
-        world[ty][tx] = TREE
-        tree_set.add((tx, ty))
-        if len(tree_set) >= 65:
+        if world[ry][rx] == GRASS:
+            world[ry][rx] = ROCK
+        rock_set.add((rx, ry))
+        if len(rock_set) >= 55:
             break
 
-    # --- scatter flowers ---
+    # --- tree groves: pick a handful of grove centers, cluster trees around them ---
+    tree_set = set()
+    grove_centers = []
+    for _ in range(10):
+        angle = rng.uniform(0, 6.283)
+        dist = rng.uniform(main_radius * 0.2, main_radius * 0.8)
+        gx = int(cx + dist * math.cos(angle))
+        gy = int(cy + dist * math.sin(angle))
+        grove_centers.append((gx, gy))
+
+    for (gx, gy) in grove_centers:
+        use_alt_color = rng.random() < 0.4
+        trees_in_grove = rng.randint(8, 16)
+        attempts = 0
+        placed = 0
+        while placed < trees_in_grove and attempts < 200:
+            attempts += 1
+            tx = gx + rng.randint(-8, 8)
+            ty = gy + rng.randint(-8, 8)
+            if not (0 <= tx < MAP_W and 0 <= ty < MAP_H):
+                continue
+            if world[ty][tx] != GRASS:
+                continue
+            dist_c = ((tx - cx) ** 2 + (ty - cy) ** 2) ** 0.5
+            if dist_c < 12 or dist_c > main_radius * 0.92:
+                continue
+            if ((tx - hut_x) ** 2 + (ty - hut_y) ** 2) ** 0.5 < 12:
+                continue
+            if ((tx - village_x) ** 2 + (ty - village_y) ** 2) ** 0.5 < 10:
+                continue
+            if ((tx - plaza_x) ** 2 + (ty - plaza_y) ** 2) ** 0.5 < 11:
+                continue
+            if any(((tx - ox) ** 2 + (ty - oy) ** 2) < 9 for ox, oy in tree_set):
+                continue
+            world[ty][tx] = TREE2 if use_alt_color else TREE
+            tree_set.add((tx, ty))
+            placed += 1
+
+    # --- scatter flowers across open grass ---
     flower_count = 0
     for _ in range(5000):
         fx = rng.randint(0, MAP_W - 1)
@@ -628,6 +993,102 @@ def decorate_world(world, cx, cy, main_radius, hut_x, hut_y):
         flower_count += 1
         if flower_count >= 120:
             break
+
+
+def decorate_wolf_island(world, ix, iy, r, seed=0):
+    """Add dead trees, jagged rocks, bone piles, and dark scorched patches to
+    a werewolf island, in a wilder/more menacing style than the main island.
+
+    Decoration is kept to the outer ring of the island (beyond ~55% of its
+    radius) so the center stays clear for werewolf chasing and combat.
+    """
+    rng = random.Random(seed)
+    inner_clear_radius = r * 0.55
+
+    occupied = set()
+
+    def _far_enough(x, y, min_dist_sq=9):
+        return not any(((x - ox) ** 2 + (y - oy) ** 2) < min_dist_sq for ox, oy in occupied)
+
+    # --- dead trees, scattered around the outer ring ---
+    dead_tree_count = rng.randint(4, 8)
+    placed = 0
+    attempts = 0
+    while placed < dead_tree_count and attempts < 150:
+        attempts += 1
+        angle = rng.uniform(0, 6.283)
+        dist = rng.uniform(inner_clear_radius, r * 0.9)
+        tx = int(ix + dist * math.cos(angle))
+        ty = int(iy + dist * math.sin(angle))
+        if not (0 <= tx < MAP_W and 0 <= ty < MAP_H):
+            continue
+        if world[ty][tx] != WOLF_GRASS:
+            continue
+        if not _far_enough(tx, ty, 16):
+            continue
+        world[ty][tx] = DEAD_TREE
+        occupied.add((tx, ty))
+        placed += 1
+
+    # --- jagged rocks, scattered around the outer ring ---
+    rock_count = rng.randint(3, 6)
+    placed = 0
+    attempts = 0
+    while placed < rock_count and attempts < 150:
+        attempts += 1
+        angle = rng.uniform(0, 6.283)
+        dist = rng.uniform(inner_clear_radius, r * 0.92)
+        tx = int(ix + dist * math.cos(angle))
+        ty = int(iy + dist * math.sin(angle))
+        if not (0 <= tx < MAP_W and 0 <= ty < MAP_H):
+            continue
+        if world[ty][tx] != WOLF_GRASS:
+            continue
+        if not _far_enough(tx, ty, 16):
+            continue
+        world[ty][tx] = WOLF_ROCK
+        occupied.add((tx, ty))
+        placed += 1
+
+    # --- bone piles, walkable decoration, anywhere on the island ---
+    bone_count = rng.randint(2, 4)
+    placed = 0
+    attempts = 0
+    while placed < bone_count and attempts < 100:
+        attempts += 1
+        angle = rng.uniform(0, 6.283)
+        dist = rng.uniform(0, r * 0.85)
+        tx = int(ix + dist * math.cos(angle))
+        ty = int(iy + dist * math.sin(angle))
+        if not (0 <= tx < MAP_W and 0 <= ty < MAP_H):
+            continue
+        if world[ty][tx] != WOLF_GRASS:
+            continue
+        if not _far_enough(tx, ty, 12):
+            continue
+        world[ty][tx] = BONES
+        occupied.add((tx, ty))
+        placed += 1
+
+    # --- dark scorched patches, walkable, anywhere on the island ---
+    patch_count = rng.randint(3, 6)
+    placed = 0
+    attempts = 0
+    while placed < patch_count and attempts < 100:
+        attempts += 1
+        angle = rng.uniform(0, 6.283)
+        dist = rng.uniform(0, r * 0.85)
+        tx = int(ix + dist * math.cos(angle))
+        ty = int(iy + dist * math.sin(angle))
+        if not (0 <= tx < MAP_W and 0 <= ty < MAP_H):
+            continue
+        if world[ty][tx] != WOLF_GRASS:
+            continue
+        if not _far_enough(tx, ty, 10):
+            continue
+        world[ty][tx] = DARK_PATCH
+        occupied.add((tx, ty))
+        placed += 1
 
 
 # ---------------------------------------------------------------------------
@@ -958,6 +1419,10 @@ def main():
 
     # Decorate the main island with trees, flowers, and a dirt path
     decorate_world(world, cx, cy, main_radius, hut_x, hut_y)
+
+    # Decorate each werewolf island with dead trees, jagged rocks, bones, etc.
+    for i, (ix, iy, r) in enumerate(island_centers):
+        decorate_wolf_island(world, ix, iy, r, seed=1000 + i)
 
     # Noah stands near the main island center
     noah = Noah(cx - 5, cy)
