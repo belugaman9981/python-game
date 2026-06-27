@@ -1011,6 +1011,8 @@ def decorate_world(world, cx, cy, main_radius, hut_x, hut_y):
         if flower_count >= 120:
             break
 
+    return plaza_x, plaza_y, village_x, village_y
+
 
 def decorate_wolf_island(world, ix, iy, r, seed=0):
     """Add dead trees, jagged rocks, bone piles, and dark scorched patches to
@@ -1108,9 +1110,43 @@ def decorate_wolf_island(world, ix, iy, r, seed=0):
         placed += 1
 
 
-# ---------------------------------------------------------------------------
-# Game state
-# ---------------------------------------------------------------------------
+def spawn_wild_chickens(world, cx, cy, main_radius, hut_x, hut_y, village_x, village_y,
+                          plaza_x, plaza_y, count=5, seed=42):
+    """Scatters a few loose, pickupable chickens around the main island so
+    the player has a way to bootstrap their very first materials/glider
+    without needing to already have a glider to reach the werewolf islands.
+
+    Avoids water, solid tiles, and the interiors of buildings/the plaza.
+    """
+    rng = random.Random(seed)
+    positions = []
+    attempts = 0
+    while len(positions) < count and attempts < 500:
+        attempts += 1
+        angle = rng.uniform(0, 6.283)
+        dist = rng.uniform(main_radius * 0.15, main_radius * 0.8)
+        wx = cx + dist * math.cos(angle)
+        wy = cy + dist * math.sin(angle)
+        tx, ty = int(wx), int(wy)
+        if not (0 <= tx < MAP_W and 0 <= ty < MAP_H):
+            continue
+        if world[ty][tx] in SOLID_TILES:
+            continue
+        if world[ty][tx] not in (GRASS, PATH, FLOWER, PLAZA):
+            continue
+        if ((tx - hut_x) ** 2 + (ty - hut_y) ** 2) ** 0.5 < 8:
+            continue
+        if ((tx - village_x) ** 2 + (ty - village_y) ** 2) ** 0.5 < 8:
+            continue
+        if ((tx - plaza_x) ** 2 + (ty - plaza_y) ** 2) ** 0.5 < 6:
+            continue
+        if any(((tx - ox) ** 2 + (ty - oy) ** 2) < 25 for ox, oy in positions):
+            continue
+        positions.append((wx, wy))
+    return [WildChicken(px, py) for px, py in positions]
+
+
+
 class GameState:
     def __init__(self):
         self.chickens = 0
@@ -1271,6 +1307,15 @@ class Noah(Entity):
 class Merchant(Entity):
     def __init__(self, x, y):
         super().__init__(x, y, SPRITES["merchant"])
+
+
+class WildChicken(Entity):
+    """A loose chicken wandering the main island that Kyle can walk up to
+    and pick up (press E) -- this bootstraps the very first chicken(s) so
+    the Noah/glider loop has something to start from."""
+    def __init__(self, x, y):
+        super().__init__(x, y, SPRITES["chicken"])
+        self.collected = False
 
 
 # ---------------------------------------------------------------------------
@@ -1485,11 +1530,18 @@ def main():
     merchant = Merchant(*merchant_pos)
 
     # Decorate the main island with trees, flowers, and a dirt path
-    decorate_world(world, cx, cy, main_radius, hut_x, hut_y)
+    plaza_x, plaza_y, village_x, village_y = decorate_world(world, cx, cy, main_radius, hut_x, hut_y)
 
     # Decorate each werewolf island with dead trees, jagged rocks, bones, etc.
     for i, (ix, iy, r) in enumerate(island_centers):
         decorate_wolf_island(world, ix, iy, r, seed=1000 + i)
+
+    # Scatter a few loose, pickupable chickens on the main island so the
+    # player has a way to bootstrap their first materials/glider.
+    wild_chickens = spawn_wild_chickens(
+        world, cx, cy, main_radius, hut_x, hut_y, village_x, village_y,
+        plaza_x, plaza_y, count=5,
+    )
 
     # Noah stands near the main island center
     noah = Noah(cx - 5, cy)
@@ -1626,6 +1678,15 @@ def main():
             else:
                 player.x, player.y = nx, ny
 
+        # ---------------- wild chicken pickups (main island) ----------------
+        for chick in wild_chickens:
+            if chick.collected:
+                continue
+            dist = ((player.x - chick.x) ** 2 + (player.y - chick.y) ** 2) ** 0.5
+            if dist < 1.0:
+                chick.collected = True
+                state.chickens += 1
+
         # ---------------- werewolves ----------------
         for wolf in werewolves:
             wolf.update(player, dt)
@@ -1641,6 +1702,7 @@ def main():
         if state.in_black_market:
             visible_npcs.append(merchant)
         visible_npcs.extend(werewolves)
+        visible_npcs.extend(chick for chick in wild_chickens if not chick.collected)
 
         render_world(world, player, visible_npcs)
         draw_hud(screen, state, player)
