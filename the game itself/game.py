@@ -1697,7 +1697,7 @@ def main():
         if state.game_over:
             running = False
 
-        # ---------------- render ----------------
+        # ---------------- render ---------------- 
         visible_npcs = [noah]
         if state.in_black_market:
             visible_npcs.append(merchant)
