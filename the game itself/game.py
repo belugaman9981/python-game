@@ -48,7 +48,7 @@ VIEW_RADIUS_TILES = 11
 VIEW_TILES_ACROSS = VIEW_RADIUS_TILES * 2 + 1   # 23 tiles visible
 
 SCREEN_W = SCREEN_H = VIEW_TILES_ACROSS * DISPLAY_TILE   # 736
-HUD_HEIGHT = 76
+HUD_HEIGHT = 100
 
 screen = pygame.display.set_mode((SCREEN_W, SCREEN_H + HUD_HEIGHT))
 pygame.display.set_caption("Kyle Jordan's Maze Adventure")
@@ -1219,6 +1219,9 @@ class Player(Entity):
         self.speed = 10.8  # tiles per second
         self.health = 100
         self.max_health = 100
+        self.stamina = 100.0
+        self.max_stamina = 100.0
+        self.on_water = False
 
     def try_move(self, dx, dy, world):
         nx, ny = self.x + dx, self.y + dy
@@ -1243,6 +1246,7 @@ class Werewolf(Entity):
         self.has_chicken = True
         self.center = center
         self.home_radius = home_radius_tiles
+        self.flash_timer = 0.0
 
     def update(self, player, dt):
         dist = ((self.x - player.x) ** 2 + (self.y - player.y) ** 2) ** 0.5
@@ -1265,6 +1269,9 @@ class Werewolf(Entity):
             self.x += self.wander_dir.x * self.speed * dt
             self.y += self.wander_dir.y * self.speed * dt
 
+        if self.flash_timer > 0:
+            self.flash_timer -= dt
+
         # keep roughly on its home island
         cx, cy = self.center
         if ((self.x - cx) ** 2 + (self.y - cy) ** 2) ** 0.5 > self.home_radius:
@@ -1273,6 +1280,7 @@ class Werewolf(Entity):
 
     def take_damage(self, amount):
         self.health -= amount
+        self.flash_timer = 0.15
         return self.health <= 0
 
 
@@ -1291,6 +1299,23 @@ class Noah(Entity):
 
     def __init__(self, x, y):
         super().__init__(x, y, SPRITES["noah"])
+        self.home_x = float(x)
+        self.home_y = float(y)
+        self.wander_dir = pygame.Vector2(0, 0)
+        self.wander_timer = random.uniform(2.0, 4.0)
+        self.speed = 0.9
+
+    def update(self, dt):
+        self.wander_timer -= dt
+        if self.wander_timer <= 0:
+            self.wander_dir = pygame.Vector2(
+                random.choice([-1, 0, 0, 1]), random.choice([-1, 0, 0, 1])
+            )
+            self.wander_timer = random.uniform(2.0, 5.0)
+        nx = self.x + self.wander_dir.x * self.speed * dt
+        ny = self.y + self.wander_dir.y * self.speed * dt
+        if ((nx - self.home_x) ** 2 + (ny - self.home_y) ** 2) ** 0.5 < 5.0:
+            self.x, self.y = nx, ny
 
     def get_dialogue(self, state: GameState):
         stage = min(state.mission_stage, len(self.DIALOGUE_BY_STAGE) - 1)
@@ -1311,16 +1336,51 @@ class Merchant(Entity):
 
 class WildChicken(Entity):
     """A loose chicken wandering the main island that Kyle can walk up to
-    and pick up (press E) -- this bootstraps the very first chicken(s) so
-    the Noah/glider loop has something to start from."""
+    and pick up -- this bootstraps the very first chicken(s) so the
+    Noah/glider loop has something to start from."""
     def __init__(self, x, y):
         super().__init__(x, y, SPRITES["chicken"])
         self.collected = False
+        self.wander_dir = pygame.Vector2(random.choice([-1, 0, 1]), random.choice([-1, 0, 1]))
+        self.wander_timer = random.uniform(1.0, 3.0)
+        self.speed = 1.5
+
+    def update(self, dt, world):
+        if self.collected:
+            return
+        self.wander_timer -= dt
+        if self.wander_timer <= 0:
+            self.wander_dir = pygame.Vector2(
+                random.choice([-1, 0, 1]), random.choice([-1, 0, 1])
+            )
+            self.wander_timer = random.uniform(1.5, 3.5)
+        nx = self.x + self.wander_dir.x * self.speed * dt
+        ny = self.y + self.wander_dir.y * self.speed * dt
+        tx, ty = int(nx), int(ny)
+        if (0 <= tx < MAP_W and 0 <= ty < MAP_H
+                and world[ty][tx] not in SOLID_TILES
+                and world[ty][tx] != WATER):
+            self.x, self.y = nx, ny
 
 
 # ---------------------------------------------------------------------------
 # UI helpers
 # ---------------------------------------------------------------------------
+class FloatingText:
+    """A brief text label that floats upward from a world position and fades."""
+    def __init__(self, x, y, text, color=(255, 240, 80)):
+        self.x = float(x)
+        self.y = float(y)
+        self.text = text
+        self.color = color
+        self.age = 0.0
+        self.lifetime = 1.4
+
+    def update(self, dt):
+        self.age += dt
+        return self.age >= self.lifetime
+
+
 def draw_text(surface, text, pos, font=FONT, color=(255, 255, 255), max_width=None):
     """Renders text at pos. If max_width is given, long lines are word-wrapped
     to fit within that pixel width (in addition to respecting '\\n')."""
