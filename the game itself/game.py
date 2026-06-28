@@ -1405,15 +1405,32 @@ def draw_text(surface, text, pos, font=FONT, color=(255, 255, 255), max_width=No
         y += font.get_height() + 4
 
 
+def _get_objective(state: GameState) -> str:
+    if state.chickens_sold >= CHICKENS_TO_WIN:
+        return "You did it! Head home."
+    if state.in_black_market:
+        return f"Sell chicken to the merchant (E) — {state.chickens_sold}/{CHICKENS_TO_WIN} sold"
+    if state.mat_lifted:
+        return "Step onto the trapdoor (E) to enter the black market"
+    if state.desk_lifted:
+        return "Lift the mat under the desk (press E near it)"
+    if state.materials >= 6:
+        return "Build a glider (press B), then walk into the water"
+    if state.gliders > 0:
+        return "Cross water to a wolf island — defeat wolves (SPC) for chicken"
+    if state.chickens > 0:
+        return "Give chicken to Noah (G near him) to earn materials"
+    return "Collect wild chickens on the island to get started"
+
+
 def draw_hud(surface, state: GameState, player: Player):
     hud_y = SCREEN_H
-    # Dark parchment panel
     pygame.draw.rect(surface, (22, 18, 32), (0, hud_y, SCREEN_W, HUD_HEIGHT))
     pygame.draw.line(surface, (90, 65, 115), (0, hud_y), (SCREEN_W, hud_y), 2)
 
     # --- Health bar ---
-    bx, by = 10, hud_y + 10
-    bw, bh = 180, 16
+    bx, by = 10, hud_y + 6
+    bw, bh = 180, 14
     pygame.draw.rect(surface, (55, 18, 18), (bx, by, bw, bh))
     hp_w = int(bw * max(0, player.health) / player.max_health)
     bar_col = (210, 45, 45) if player.health / player.max_health > 0.25 else (255, 100, 20)
@@ -1421,22 +1438,29 @@ def draw_hud(surface, state: GameState, player: Player):
         pygame.draw.rect(surface, bar_col, (bx, by, hp_w, bh))
     pygame.draw.rect(surface, (180, 130, 130), (bx, by, bw, bh), 1)
     hp_surf = HUD_FONT.render(f"HP  {int(player.health)}/{player.max_health}", True, (255, 225, 225))
-    surface.blit(hp_surf, (bx + 4, by + 2))
+    surface.blit(hp_surf, (bx + 4, by + 1))
+
+    # --- Stamina bar ---
+    sb_y = hud_y + 22
+    pygame.draw.rect(surface, (20, 40, 20), (bx, sb_y, bw, 10))
+    sta_w = int(bw * max(0.0, player.stamina) / player.max_stamina)
+    if sta_w > 0:
+        sta_col = (80, 210, 80) if player.stamina > 30 else (180, 130, 30)
+        pygame.draw.rect(surface, sta_col, (bx, sb_y, sta_w, 10))
+    pygame.draw.rect(surface, (80, 150, 80), (bx, sb_y, bw, 10), 1)
+    surface.blit(HUD_FONT.render(f"STA {int(player.stamina)}", True, (180, 240, 180)), (bx + 4, sb_y + 1))
 
     # --- Item stats row ---
-    sx, sy = 10, hud_y + 34
-    # Chicken (golden circle)
+    sx, sy = 10, hud_y + 38
     pygame.draw.circle(surface, (248, 195, 45), (sx + 7, sy + 7), 6)
     pygame.draw.circle(surface, (200, 148, 30), (sx + 7, sy + 7), 6, 1)
     surface.blit(HUD_FONT.render(f"x{state.chickens}", True, (255, 240, 185)), (sx + 16, sy + 1))
 
-    # Materials (blue square)
     mx = sx + 58
     pygame.draw.rect(surface, (80, 175, 225), (mx, sy + 1, 12, 12))
     pygame.draw.rect(surface, (50, 130, 185), (mx, sy + 1, 12, 12), 1)
     surface.blit(HUD_FONT.render(f"x{state.materials}", True, (185, 230, 255)), (mx + 15, sy + 1))
 
-    # Gold (yellow diamond)
     gx = mx + 65
     pygame.draw.polygon(surface, (255, 195, 35),
                         [(gx+6, sy), (gx+12, sy+6), (gx+6, sy+12), (gx, sy+6)])
@@ -1444,25 +1468,31 @@ def draw_hud(surface, state: GameState, player: Player):
                         [(gx+6, sy), (gx+12, sy+6), (gx+6, sy+12), (gx, sy+6)], 1)
     surface.blit(HUD_FONT.render(f"{state.money}g", True, (255, 225, 110)), (gx + 16, sy + 1))
 
-    # Sold progress
     px2 = gx + 68
     sold_col = (100, 235, 115) if state.chickens_sold < CHICKENS_TO_WIN else (255, 215, 50)
     surface.blit(HUD_FONT.render(f"Sold:{state.chickens_sold}/{CHICKENS_TO_WIN}", True, sold_col),
                  (px2, sy + 1))
 
-    # Trust indicator (right side)
+    px3 = px2 + 92
+    surface.blit(HUD_FONT.render(f"Gliders:{state.gliders}", True, (140, 205, 255)), (px3, sy + 1))
+
+    # Trust indicator (right side, aligned with stats row)
     if state.noah_trust:
         tc, tt = (80, 225, 110), "Noah trusts you"
-        pygame.draw.circle(surface, tc, (SCREEN_W - 170, hud_y + 22), 5)
+        pygame.draw.circle(surface, tc, (SCREEN_W - 170, hud_y + 44), 5)
     else:
         tc, tt = (230, 80, 80), "Noah suspicious!"
-        pts = [(SCREEN_W - 170, hud_y + 16), (SCREEN_W - 175, hud_y + 28), (SCREEN_W - 165, hud_y + 28)]
+        pts = [(SCREEN_W - 170, hud_y + 38), (SCREEN_W - 175, hud_y + 50), (SCREEN_W - 165, hud_y + 50)]
         pygame.draw.polygon(surface, tc, pts)
-    surface.blit(HUD_FONT.render(tt, True, tc), (SCREEN_W - 158, hud_y + 16))
+    surface.blit(HUD_FONT.render(tt, True, tc), (SCREEN_W - 158, hud_y + 38))
+
+    # --- Objective ---
+    surface.blit(FONT.render(f"Goal: {_get_objective(state)}", True, (200, 175, 100)),
+                 (10, hud_y + 58))
 
     # Controls hint
-    hint = "E:talk/interact  G:give  B:glider  SPC:attack  Q:return"
-    surface.blit(FONT.render(hint, True, (110, 95, 145)), (10, hud_y + HUD_HEIGHT - 17))
+    hint = "WASD:move  E:interact  G:give  B:glider  SPC:attack  Q:return  SHIFT:sprint"
+    surface.blit(FONT.render(hint, True, (110, 95, 145)), (10, hud_y + HUD_HEIGHT - 16))
 
 
 def show_message_box(surface, message):
@@ -1522,22 +1552,40 @@ def show_win_screen(surface):
     pygame.time.wait(4000)
 
 
+def show_game_over_screen(surface):
+    surface.fill((10, 5, 5))
+    draw_text(
+        surface,
+        "Kyle has been taken down by the werewolves...\n\nGAME OVER",
+        (40, SCREEN_H // 2 - 40),
+        font=BIG_FONT,
+        color=(210, 60, 60),
+    )
+    draw_text(surface, "(press any key to quit)", (40, SCREEN_H // 2 + 60), color=(160, 120, 120))
+    pygame.display.flip()
+    waiting = True
+    while waiting:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                waiting = False
+
+
 # ---------------------------------------------------------------------------
 # Rendering: only draw tiles within the visibility radius (camera-based)
 # ---------------------------------------------------------------------------
-def render_world(world, player, npcs_visible):
+def render_world(world, player, npcs_visible, floating_texts=(), shake=(0, 0)):
     screen.fill((15, 10, 22))
 
-    # Fractional camera: player sprite is always centered on screen.
-    # cam_pixel_x/y = world-pixel coordinate of the viewport's top-left corner.
-    cam_pixel_x = player.x * DISPLAY_TILE - SCREEN_W / 2
-    cam_pixel_y = player.y * DISPLAY_TILE - SCREEN_H / 2
+    # shake offset jiggles the camera briefly on impact
+    cam_pixel_x = player.x * DISPLAY_TILE - SCREEN_W / 2 + shake[0]
+    cam_pixel_y = player.y * DISPLAY_TILE - SCREEN_H / 2 + shake[1]
 
-    # First tile that touches the viewport (floor so partial left/top tiles show)
     first_tile_x = math.floor(cam_pixel_x / DISPLAY_TILE)
     first_tile_y = math.floor(cam_pixel_y / DISPLAY_TILE)
 
-    # +1 extra tile per axis so partial tiles at the right/bottom edges are drawn
     for ty_offset in range(VIEW_TILES_ACROSS + 1):
         world_ty = first_tile_y + ty_offset
         if not (0 <= world_ty < MAP_H):
@@ -1552,18 +1600,31 @@ def render_world(world, player, npcs_visible):
             sy = world_ty * DISPLAY_TILE - cam_pixel_y
             screen.blit(img, (sx, sy))
 
-    # Player sprite is always centered on screen
     px = SCREEN_W / 2 - DISPLAY_TILE / 2
     py = SCREEN_H / 2 - DISPLAY_TILE / 2
 
-    # NPCs / enemies relative to the fractional camera
     for entity in npcs_visible:
         ex = (entity.x - player.x) * DISPLAY_TILE + SCREEN_W / 2 - DISPLAY_TILE / 2
         ey = (entity.y - player.y) * DISPLAY_TILE + SCREEN_H / 2 - DISPLAY_TILE / 2
         if -DISPLAY_TILE <= ex <= SCREEN_W and -DISPLAY_TILE <= ey <= SCREEN_H:
             screen.blit(entity.sprite, (ex, ey))
+            if isinstance(entity, Werewolf) and entity.flash_timer > 0:
+                flash_surf = pygame.Surface((DISPLAY_TILE, DISPLAY_TILE), pygame.SRCALPHA)
+                flash_surf.fill((255, 60, 60, 160))
+                screen.blit(flash_surf, (ex, ey))
 
     screen.blit(player.sprite, (px, py))
+
+    # Floating pop-up texts (world-anchored, float upward, fade out)
+    for ft in floating_texts:
+        alpha = max(0, int(255 * (1.0 - ft.age / ft.lifetime)))
+        rise = int(ft.age * 28)
+        ftx = (ft.x - player.x) * DISPLAY_TILE + SCREEN_W / 2
+        fty = (ft.y - player.y) * DISPLAY_TILE + SCREEN_H / 2 - rise
+        if -40 <= ftx <= SCREEN_W + 40 and -40 <= fty <= SCREEN_H + 40:
+            txt_s = FONT.render(ft.text, True, ft.color)
+            txt_s.set_alpha(alpha)
+            screen.blit(txt_s, (ftx, fty))
 
 
 # ---------------------------------------------------------------------------
@@ -1620,6 +1681,14 @@ def main():
 
     last_attack_time = 0
     attack_cooldown = 400  # ms
+
+    floating_texts = []
+    shake_timer = 0.0
+    shake_x = shake_y = 0
+    damage_text_timer = 0.0
+    player_died = False
+    WOLF_RESPAWN_INTERVAL = 45.0
+    island_respawn_timers = [WOLF_RESPAWN_INTERVAL] * len(island_centers)
 
     # Track whether the trapdoor area has been "stepped into" to flag market state
     market_entry_tile = (market_x + 3, market_y + 1)
@@ -1701,41 +1770,71 @@ def main():
                     now = pygame.time.get_ticks()
                     if now - last_attack_time > attack_cooldown:
                         last_attack_time = now
+                        hit_any = False
                         for wolf in list(werewolves):
                             dist = ((player.x - wolf.x) ** 2 + (player.y - wolf.y) ** 2) ** 0.5
                             if dist < 1.6:
+                                hit_any = True
                                 if wolf.take_damage(20):
                                     werewolves.remove(wolf)
                                     if wolf.has_chicken:
                                         state.chickens += 1
+                                        floating_texts.append(FloatingText(wolf.x, wolf.y - 1, "+1 Chicken!", (255, 215, 60)))
+                                    floating_texts.append(FloatingText(wolf.x, wolf.y, "Wolf down!", (220, 80, 80)))
+                                else:
+                                    floating_texts.append(FloatingText(wolf.x, wolf.y - 1, "-20", (255, 140, 60)))
+                        if not hit_any:
+                            floating_texts.append(FloatingText(player.x, player.y - 1, "Miss!", (170, 170, 170)))
+
+                if event.key == pygame.K_q:
+                    on_wolf_island = any(
+                        ((player.x - ix) ** 2 + (player.y - iy) ** 2) ** 0.5 < r + 5
+                        for ix, iy, r in island_centers
+                    )
+                    if on_wolf_island:
+                        player.x, player.y = float(cx), float(cy + 5)
+                        player.on_water = False
+                        floating_texts.append(FloatingText(player.x, player.y - 1, "Back to main island!", (130, 205, 255)))
 
         # ---------------- movement ----------------
         keys = pygame.key.get_pressed()
+        sprinting = (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]) and player.stamina > 0
+        speed_mult = 1.75 if sprinting else 1.0
+        if sprinting:
+            player.stamina = max(0.0, player.stamina - 45 * dt)
+        else:
+            player.stamina = min(player.max_stamina, player.stamina + 22 * dt)
+
         dx = dy = 0.0
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-            dx = -player.speed * dt
+            dx = -player.speed * speed_mult * dt
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-            dx = player.speed * dt
+            dx = player.speed * speed_mult * dt
         if keys[pygame.K_UP] or keys[pygame.K_w]:
-            dy = -player.speed * dt
+            dy = -player.speed * speed_mult * dt
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-            dy = player.speed * dt
+            dy = player.speed * speed_mult * dt
 
         if dx and dy:  # normalize diagonal movement
             dx *= 0.7071
             dy *= 0.7071
 
-        # Crossing onto WATER is blocked unless Kyle has a glider, in which
-        # case he "glides" across automatically.
         nx, ny = player.x + dx, player.y + dy
         tx, ty = int(nx), int(ny)
         if 0 <= tx < MAP_W and 0 <= ty < MAP_H:
             target_tile = world[ty][tx]
-            if target_tile == WATER and state.gliders <= 0:
-                pass  # can't cross water without a glider
-            elif target_tile in SOLID_TILES and target_tile != WATER:
+            if target_tile in SOLID_TILES and target_tile != WATER:
                 pass  # walls block movement
+            elif target_tile == WATER:
+                if state.gliders > 0:
+                    if not player.on_water:
+                        state.gliders -= 1
+                        player.on_water = True
+                        floating_texts.append(FloatingText(player.x, player.y - 1, "Gliding!", (130, 210, 255)))
+                    player.x, player.y = nx, ny
+                # else blocked — no glider
             else:
+                player.on_water = False
                 player.x, player.y = nx, ny
 
         # ---------------- wild chicken pickups (main island) ----------------
