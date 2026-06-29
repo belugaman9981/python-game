@@ -1884,7 +1884,7 @@ def main():
         visible_npcs.extend(chick for chick in wild_chickens if not chick.collected)
 
         render_world(world, player, visible_npcs)
-        draw_hud(screen, state, player)
+        draw_hud(screen, state, player) 
 
         pygame.display.flip()
 
