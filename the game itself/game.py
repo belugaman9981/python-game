@@ -48,7 +48,7 @@ VIEW_RADIUS_TILES = 11
 VIEW_TILES_ACROSS = VIEW_RADIUS_TILES * 2 + 1   # 23 tiles visible
 
 SCREEN_W = SCREEN_H = VIEW_TILES_ACROSS * DISPLAY_TILE   # 736
-HUD_HEIGHT = 100
+HUD_HEIGHT = 76
 
 screen = pygame.display.set_mode((SCREEN_W, SCREEN_H + HUD_HEIGHT))
 pygame.display.set_caption("Kyle Jordan's Maze Adventure")
@@ -81,20 +81,27 @@ FLOWER        = 12   # walkable grass with decorative flower
 PATH          = 13   # dirt path (walkable)
 ROCK          = 14   # impassable boulder
 PLAZA         = 15   # stone plaza tile (town square)
-FOUNTAIN      = 16   # impassable fountain centerpiece
-DOCK          = 17   # wooden dock planks (walkable, over water)
-VILLAGE_WALL  = 18   # second building's wall
-VILLAGE_FLOOR = 19   # second building's floor
-TREE2         = 20   # alternate-colored impassable tree canopy
-DEAD_TREE     = 21   # impassable bare/dead tree, for werewolf islands
-WOLF_ROCK     = 22   # impassable jagged dark boulder, for werewolf islands
-BONES         = 23   # walkable wolf-grass with scattered bones (decorative)
-DARK_PATCH    = 24   # walkable scorched/dark grass patch (decorative)
+FOUNTAIN_00, FOUNTAIN_01, FOUNTAIN_02 = 16, 17, 18
+FOUNTAIN_10, FOUNTAIN_11, FOUNTAIN_12 = 19, 20, 21
+FOUNTAIN_20, FOUNTAIN_21, FOUNTAIN_22 = 22, 23, 24
+FOUNTAIN_TILES = {
+    (0, 0): FOUNTAIN_00, (0, 1): FOUNTAIN_01, (0, 2): FOUNTAIN_02,
+    (1, 0): FOUNTAIN_10, (1, 1): FOUNTAIN_11, (1, 2): FOUNTAIN_12,
+    (2, 0): FOUNTAIN_20, (2, 1): FOUNTAIN_21, (2, 2): FOUNTAIN_22,
+}
+DOCK          = 25   # wooden dock planks (walkable, over water)
+VILLAGE_WALL  = 26   # second building's wall
+VILLAGE_FLOOR = 27   # second building's floor
+TREE2         = 28   # alternate-colored impassable tree canopy
+DEAD_TREE     = 29   # impassable bare/dead tree, for werewolf islands
+WOLF_ROCK     = 30   # impassable jagged dark boulder, for werewolf islands
+BONES         = 31   # walkable wolf-grass with scattered bones (decorative)
+DARK_PATCH    = 32   # walkable scorched/dark grass patch (decorative)
 
 SOLID_TILES = {
-    HUT_WALL, MARKET_WALL, WATER, TREE, ROCK, FOUNTAIN, VILLAGE_WALL, TREE2,
+    HUT_WALL, MARKET_WALL, WATER, TREE, ROCK, VILLAGE_WALL, TREE2,
     DEAD_TREE, WOLF_ROCK,
-}
+} | set(FOUNTAIN_TILES.values())
 
 
 # ---------------------------------------------------------------------------
@@ -437,30 +444,44 @@ def _make_plaza():
         "mMmMMmMMmMMmMMmM",
     ], {"M": (168,160,148), "m": (148,140,130)})
 
-def _make_fountain():
-    """An impassable decorative fountain centerpiece, sits on plaza tiles."""
+def _make_fountain_tile(row_in_grid, col_in_grid, size=3):
+    """Builds ONE 16x16 tile that is a piece of a larger size x size fountain,
+    so the full fountain reads as a single round basin instead of `size*size`
+    repeated copies of the same image. (row_in_grid, col_in_grid) is this
+    tile's position within the fountain (0-indexed)."""
     img = _make_plaza()
-    rows = [
-        "................",
-        "...sssssssss....",
-        "..sBBBBBBBBBs...",
-        ".sBBwwwwwwwBBs..",
-        ".sBwwwwwwwwwBs..",
-        ".sBwwgwwwgwwBs..",
-        ".sBwwwwwwwwwBs..",
-        ".sBwwwgwwwwwBs..",
-        ".sBwwwwwwwwwBs..",
-        ".sBBwwwwwwwBBs..",
-        "..sBBBBBBBBBs...",
-        "...sssssssss....",
-        "................",
-        "................",
-        "................",
-        "................",
-    ]
-    overlay = make_surface(rows, {
-        ".": None, "s": (95,90,88), "B": (150,148,150), "w": (95,165,225), "g": (200,225,250),
-    })
+
+    # Work in a "logical" 16*size x 16*size canvas, draw the whole basin once,
+    # then crop out just this tile's slice.
+    full = size * TILE
+    canvas = pygame.Surface((full, full), pygame.SRCALPHA)
+    cx_, cy_ = full / 2, full / 2
+    outer_r = full * 0.46
+    rim_r = full * 0.40
+    water_r = full * 0.34
+    inner_r = full * 0.10
+
+    rim_color = (95, 90, 88)
+    basin_color = (150, 148, 150)
+    water_color = (95, 165, 225)
+    sparkle_color = (200, 225, 250)
+
+    for yy in range(full):
+        for xx in range(full):
+            d = ((xx - cx_) ** 2 + (yy - cy_) ** 2) ** 0.5
+            if d < inner_r:
+                canvas.set_at((xx, yy), sparkle_color if (xx + yy) % 9 == 0 else water_color)
+            elif d < water_r:
+                canvas.set_at((xx, yy), water_color)
+            elif d < rim_r:
+                canvas.set_at((xx, yy), basin_color)
+            elif d < outer_r:
+                canvas.set_at((xx, yy), rim_color)
+            # else: leave transparent so the plaza tile shows through
+
+    slice_x = col_in_grid * TILE
+    slice_y = row_in_grid * TILE
+    overlay = canvas.subsurface((slice_x, slice_y, TILE, TILE)).copy()
     img.blit(overlay, (0, 0))
     return img
 
@@ -619,7 +640,6 @@ TILE_IMAGES = {
     TREE2:        _make_tree2(),
     ROCK:         _make_rock(),
     PLAZA:        _make_plaza(),
-    FOUNTAIN:     _make_fountain(),
     DOCK:         _make_dock(),
     VILLAGE_WALL: _make_village_wall(),
     VILLAGE_FLOOR:_make_village_floor(),
@@ -628,6 +648,11 @@ TILE_IMAGES = {
     BONES:        _make_bones(),
     DARK_PATCH:   _make_dark_patch(),
 }
+
+# Register the 3x3 fountain as 9 distinct tiles, each a slice of one
+# cohesive round basin, rather than 9 copies of the same image.
+for (_row, _col), _tile_id in FOUNTAIN_TILES.items():
+    TILE_IMAGES[_tile_id] = _make_fountain_tile(_row, _col, size=3)
 
 
 # ---- Character / NPC sprites (16x16 pixel art, scaled 2× for display) ------
@@ -875,12 +900,16 @@ def carve_plaza(world, cx, cy, radius=9):
             d = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
             if d < radius:
                 world[y][x] = PLAZA
-    fountain_r = 2
-    for y in range(cy - fountain_r, cy + fountain_r + 1):
-        for x in range(cx - fountain_r, cx + fountain_r + 1):
-            d = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
-            if d < fountain_r:
-                world[y][x] = FOUNTAIN
+
+    # Place the fountain as one cohesive 3x3 block of distinct tiles (each
+    # tile is a slice of a single round basin) instead of repeating one
+    # fountain image across multiple tiles.
+    fountain_size = 3
+    top_left_x = cx - fountain_size // 2
+    top_left_y = cy - fountain_size // 2
+    for row in range(fountain_size):
+        for col in range(fountain_size):
+            world[top_left_y + row][top_left_x + col] = FOUNTAIN_TILES[(row, col)]
 
 
 def carve_dock(world, shore_x, shore_y, direction, length=10):
@@ -1219,9 +1248,6 @@ class Player(Entity):
         self.speed = 10.8  # tiles per second
         self.health = 100
         self.max_health = 100
-        self.stamina = 100.0
-        self.max_stamina = 100.0
-        self.on_water = False
 
     def try_move(self, dx, dy, world):
         nx, ny = self.x + dx, self.y + dy
@@ -1246,7 +1272,6 @@ class Werewolf(Entity):
         self.has_chicken = True
         self.center = center
         self.home_radius = home_radius_tiles
-        self.flash_timer = 0.0
 
     def update(self, player, dt):
         dist = ((self.x - player.x) ** 2 + (self.y - player.y) ** 2) ** 0.5
@@ -1269,9 +1294,6 @@ class Werewolf(Entity):
             self.x += self.wander_dir.x * self.speed * dt
             self.y += self.wander_dir.y * self.speed * dt
 
-        if self.flash_timer > 0:
-            self.flash_timer -= dt
-
         # keep roughly on its home island
         cx, cy = self.center
         if ((self.x - cx) ** 2 + (self.y - cy) ** 2) ** 0.5 > self.home_radius:
@@ -1280,7 +1302,6 @@ class Werewolf(Entity):
 
     def take_damage(self, amount):
         self.health -= amount
-        self.flash_timer = 0.15
         return self.health <= 0
 
 
@@ -1299,23 +1320,6 @@ class Noah(Entity):
 
     def __init__(self, x, y):
         super().__init__(x, y, SPRITES["noah"])
-        self.home_x = float(x)
-        self.home_y = float(y)
-        self.wander_dir = pygame.Vector2(0, 0)
-        self.wander_timer = random.uniform(2.0, 4.0)
-        self.speed = 0.9
-
-    def update(self, dt):
-        self.wander_timer -= dt
-        if self.wander_timer <= 0:
-            self.wander_dir = pygame.Vector2(
-                random.choice([-1, 0, 0, 1]), random.choice([-1, 0, 0, 1])
-            )
-            self.wander_timer = random.uniform(2.0, 5.0)
-        nx = self.x + self.wander_dir.x * self.speed * dt
-        ny = self.y + self.wander_dir.y * self.speed * dt
-        if ((nx - self.home_x) ** 2 + (ny - self.home_y) ** 2) ** 0.5 < 5.0:
-            self.x, self.y = nx, ny
 
     def get_dialogue(self, state: GameState):
         stage = min(state.mission_stage, len(self.DIALOGUE_BY_STAGE) - 1)
@@ -1336,51 +1340,16 @@ class Merchant(Entity):
 
 class WildChicken(Entity):
     """A loose chicken wandering the main island that Kyle can walk up to
-    and pick up -- this bootstraps the very first chicken(s) so the
-    Noah/glider loop has something to start from."""
+    and pick up (press E) -- this bootstraps the very first chicken(s) so
+    the Noah/glider loop has something to start from."""
     def __init__(self, x, y):
         super().__init__(x, y, SPRITES["chicken"])
         self.collected = False
-        self.wander_dir = pygame.Vector2(random.choice([-1, 0, 1]), random.choice([-1, 0, 1]))
-        self.wander_timer = random.uniform(1.0, 3.0)
-        self.speed = 1.5
-
-    def update(self, dt, world):
-        if self.collected:
-            return
-        self.wander_timer -= dt
-        if self.wander_timer <= 0:
-            self.wander_dir = pygame.Vector2(
-                random.choice([-1, 0, 1]), random.choice([-1, 0, 1])
-            )
-            self.wander_timer = random.uniform(1.5, 3.5)
-        nx = self.x + self.wander_dir.x * self.speed * dt
-        ny = self.y + self.wander_dir.y * self.speed * dt
-        tx, ty = int(nx), int(ny)
-        if (0 <= tx < MAP_W and 0 <= ty < MAP_H
-                and world[ty][tx] not in SOLID_TILES
-                and world[ty][tx] != WATER):
-            self.x, self.y = nx, ny
 
 
 # ---------------------------------------------------------------------------
 # UI helpers
 # ---------------------------------------------------------------------------
-class FloatingText:
-    """A brief text label that floats upward from a world position and fades."""
-    def __init__(self, x, y, text, color=(255, 240, 80)):
-        self.x = float(x)
-        self.y = float(y)
-        self.text = text
-        self.color = color
-        self.age = 0.0
-        self.lifetime = 1.4
-
-    def update(self, dt):
-        self.age += dt
-        return self.age >= self.lifetime
-
-
 def draw_text(surface, text, pos, font=FONT, color=(255, 255, 255), max_width=None):
     """Renders text at pos. If max_width is given, long lines are word-wrapped
     to fit within that pixel width (in addition to respecting '\\n')."""
@@ -1405,32 +1374,15 @@ def draw_text(surface, text, pos, font=FONT, color=(255, 255, 255), max_width=No
         y += font.get_height() + 4
 
 
-def _get_objective(state: GameState) -> str:
-    if state.chickens_sold >= CHICKENS_TO_WIN:
-        return "You did it! Head home."
-    if state.in_black_market:
-        return f"Sell chicken to the merchant (E) — {state.chickens_sold}/{CHICKENS_TO_WIN} sold"
-    if state.mat_lifted:
-        return "Step onto the trapdoor (E) to enter the black market"
-    if state.desk_lifted:
-        return "Lift the mat under the desk (press E near it)"
-    if state.materials >= 6:
-        return "Build a glider (press B), then walk into the water"
-    if state.gliders > 0:
-        return "Cross water to a wolf island — defeat wolves (SPC) for chicken"
-    if state.chickens > 0:
-        return "Give chicken to Noah (G near him) to earn materials"
-    return "Collect wild chickens on the island to get started"
-
-
 def draw_hud(surface, state: GameState, player: Player):
     hud_y = SCREEN_H
+    # Dark parchment panel
     pygame.draw.rect(surface, (22, 18, 32), (0, hud_y, SCREEN_W, HUD_HEIGHT))
     pygame.draw.line(surface, (90, 65, 115), (0, hud_y), (SCREEN_W, hud_y), 2)
 
     # --- Health bar ---
-    bx, by = 10, hud_y + 6
-    bw, bh = 180, 14
+    bx, by = 10, hud_y + 10
+    bw, bh = 180, 16
     pygame.draw.rect(surface, (55, 18, 18), (bx, by, bw, bh))
     hp_w = int(bw * max(0, player.health) / player.max_health)
     bar_col = (210, 45, 45) if player.health / player.max_health > 0.25 else (255, 100, 20)
@@ -1438,29 +1390,22 @@ def draw_hud(surface, state: GameState, player: Player):
         pygame.draw.rect(surface, bar_col, (bx, by, hp_w, bh))
     pygame.draw.rect(surface, (180, 130, 130), (bx, by, bw, bh), 1)
     hp_surf = HUD_FONT.render(f"HP  {int(player.health)}/{player.max_health}", True, (255, 225, 225))
-    surface.blit(hp_surf, (bx + 4, by + 1))
-
-    # --- Stamina bar ---
-    sb_y = hud_y + 22
-    pygame.draw.rect(surface, (20, 40, 20), (bx, sb_y, bw, 10))
-    sta_w = int(bw * max(0.0, player.stamina) / player.max_stamina)
-    if sta_w > 0:
-        sta_col = (80, 210, 80) if player.stamina > 30 else (180, 130, 30)
-        pygame.draw.rect(surface, sta_col, (bx, sb_y, sta_w, 10))
-    pygame.draw.rect(surface, (80, 150, 80), (bx, sb_y, bw, 10), 1)
-    surface.blit(HUD_FONT.render(f"STA {int(player.stamina)}", True, (180, 240, 180)), (bx + 4, sb_y + 1))
+    surface.blit(hp_surf, (bx + 4, by + 2))
 
     # --- Item stats row ---
-    sx, sy = 10, hud_y + 38
+    sx, sy = 10, hud_y + 34
+    # Chicken (golden circle)
     pygame.draw.circle(surface, (248, 195, 45), (sx + 7, sy + 7), 6)
     pygame.draw.circle(surface, (200, 148, 30), (sx + 7, sy + 7), 6, 1)
     surface.blit(HUD_FONT.render(f"x{state.chickens}", True, (255, 240, 185)), (sx + 16, sy + 1))
 
+    # Materials (blue square)
     mx = sx + 58
     pygame.draw.rect(surface, (80, 175, 225), (mx, sy + 1, 12, 12))
     pygame.draw.rect(surface, (50, 130, 185), (mx, sy + 1, 12, 12), 1)
     surface.blit(HUD_FONT.render(f"x{state.materials}", True, (185, 230, 255)), (mx + 15, sy + 1))
 
+    # Gold (yellow diamond)
     gx = mx + 65
     pygame.draw.polygon(surface, (255, 195, 35),
                         [(gx+6, sy), (gx+12, sy+6), (gx+6, sy+12), (gx, sy+6)])
@@ -1468,31 +1413,25 @@ def draw_hud(surface, state: GameState, player: Player):
                         [(gx+6, sy), (gx+12, sy+6), (gx+6, sy+12), (gx, sy+6)], 1)
     surface.blit(HUD_FONT.render(f"{state.money}g", True, (255, 225, 110)), (gx + 16, sy + 1))
 
+    # Sold progress
     px2 = gx + 68
     sold_col = (100, 235, 115) if state.chickens_sold < CHICKENS_TO_WIN else (255, 215, 50)
     surface.blit(HUD_FONT.render(f"Sold:{state.chickens_sold}/{CHICKENS_TO_WIN}", True, sold_col),
                  (px2, sy + 1))
 
-    px3 = px2 + 92
-    surface.blit(HUD_FONT.render(f"Gliders:{state.gliders}", True, (140, 205, 255)), (px3, sy + 1))
-
-    # Trust indicator (right side, aligned with stats row)
+    # Trust indicator (right side)
     if state.noah_trust:
         tc, tt = (80, 225, 110), "Noah trusts you"
-        pygame.draw.circle(surface, tc, (SCREEN_W - 170, hud_y + 44), 5)
+        pygame.draw.circle(surface, tc, (SCREEN_W - 170, hud_y + 22), 5)
     else:
         tc, tt = (230, 80, 80), "Noah suspicious!"
-        pts = [(SCREEN_W - 170, hud_y + 38), (SCREEN_W - 175, hud_y + 50), (SCREEN_W - 165, hud_y + 50)]
+        pts = [(SCREEN_W - 170, hud_y + 16), (SCREEN_W - 175, hud_y + 28), (SCREEN_W - 165, hud_y + 28)]
         pygame.draw.polygon(surface, tc, pts)
-    surface.blit(HUD_FONT.render(tt, True, tc), (SCREEN_W - 158, hud_y + 38))
-
-    # --- Objective ---
-    surface.blit(FONT.render(f"Goal: {_get_objective(state)}", True, (200, 175, 100)),
-                 (10, hud_y + 58))
+    surface.blit(HUD_FONT.render(tt, True, tc), (SCREEN_W - 158, hud_y + 16))
 
     # Controls hint
-    hint = "WASD:move  E:interact  G:give  B:glider  SPC:attack  Q:return  SHIFT:sprint"
-    surface.blit(FONT.render(hint, True, (110, 95, 145)), (10, hud_y + HUD_HEIGHT - 16))
+    hint = "E:talk/interact  G:give  B:glider  SPC:attack  Q:return"
+    surface.blit(FONT.render(hint, True, (110, 95, 145)), (10, hud_y + HUD_HEIGHT - 17))
 
 
 def show_message_box(surface, message):
@@ -1552,40 +1491,164 @@ def show_win_screen(surface):
     pygame.time.wait(4000)
 
 
-def show_game_over_screen(surface):
-    surface.fill((10, 5, 5))
-    draw_text(
-        surface,
-        "Kyle has been taken down by the werewolves...\n\nGAME OVER",
-        (40, SCREEN_H // 2 - 40),
-        font=BIG_FONT,
-        color=(210, 60, 60),
-    )
-    draw_text(surface, "(press any key to quit)", (40, SCREEN_H // 2 + 60), color=(160, 120, 120))
-    pygame.display.flip()
-    waiting = True
-    while waiting:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.KEYDOWN:
-                waiting = False
-
-
 # ---------------------------------------------------------------------------
 # Rendering: only draw tiles within the visibility radius (camera-based)
 # ---------------------------------------------------------------------------
-def render_world(world, player, npcs_visible, floating_texts=(), shake=(0, 0)):
+TERRAIN_BASE_TILES = {WATER, SAND, GRASS, WOLF_GRASS}
+
+# Flat colors for the organic terrain look (replacing the old textured tiles
+# for water/grass/sand specifically -- everything else keeps its pixel art).
+ORGANIC_WATER_COLOR = (51, 119, 200)
+ORGANIC_LAND_COLOR = (99, 186, 107)
+ORGANIC_WOLF_LAND_COLOR = (68, 145, 79)
+ORGANIC_OUTLINE_COLOR = (54, 130, 64)
+ORGANIC_WOLF_OUTLINE_COLOR = (38, 96, 48)
+
+# Margin (in tiles) added around the visible viewport when building the
+# coastline mask, so the smoothing pass has context beyond the screen edge.
+_TERRAIN_MARGIN = 2
+_TERRAIN_GRID = VIEW_TILES_ACROSS + _TERRAIN_MARGIN * 2
+
+try:
+    import pygame.surfarray as _surfarray
+    _HAS_SURFARRAY = True
+except ImportError:
+    _HAS_SURFARRAY = False
+
+
+def _smooth_upscale(mask_surf, final_size):
+    """Two-step smoothscale up to final_size -- softer than one jump, cheaper
+    than three. Tuned for a per-frame performance budget."""
+    grid = mask_surf.get_width()
+    cur = pygame.transform.smoothscale(mask_surf, (grid * 4, grid * 4))
+    cur = pygame.transform.smoothscale(cur, (final_size, final_size))
+    return cur
+
+
+def _colored_layer_with_mask_alpha(mask_big, color, red_array=None):
+    """Returns an RGBA surface filled with `color`, whose per-pixel alpha is
+    taken from mask_big's brightness (white=opaque, black=transparent).
+    If red_array is provided, it's used directly instead of recomputing."""
+    layer = pygame.Surface(mask_big.get_size(), pygame.SRCALPHA)
+    layer.fill(color)
+    if _HAS_SURFARRAY:
+        if red_array is None:
+            red_array = _surfarray.array_red(mask_big)
+        alpha_view = _surfarray.pixels_alpha(layer)
+        alpha_view[:, :] = red_array
+        del alpha_view
+    else:
+        # Fallback without numpy: hard-edged but still flat-colored.
+        layer.set_colorkey(None)
+    return layer
+
+
+def _draw_hand_drawn_outline(surface, red_array, outline_color, origin_offset, scale=1):
+    """Draws a wobbly, hand-drawn-style stroke along the coastline by
+    sampling the mask's edge contour at intervals around each land blob
+    and connecting the points with slightly jittered line segments.
+    `red_array` is the land mask's precomputed array_red (avoids recomputing).
+    `scale` adjusts step/circle size for whatever resolution `surface` is at."""
+    if not _HAS_SURFARRAY or red_array is None:
+        return
+    step = max(1, int(2 * scale))  # px spacing between edge samples
+    rng = random.Random(int(origin_offset[0] * 7 + origin_offset[1] * 13))
+
+    sampled = red_array[::step, ::step]  # vectorized downsample, no Python loop
+    edge_mask = (sampled > 90) & (sampled < 200)
+    xs, ys = edge_mask.nonzero()
+    # array_red is indexed [x, y], so nonzero() gives (x_idx, y_idx) in that order.
+    radius = max(1, scale)
+    for xi, yi in zip(xs, ys):
+        x, y = int(xi) * step, int(yi) * step
+        jitter = rng.uniform(-0.6, 0.6) * scale
+        pygame.draw.circle(surface, outline_color, (x + jitter, y + jitter), radius)
+
+
+_TERRAIN_SUPERSAMPLE = 6  # internal samples-per-tile for the blur/mask pass
+                          # (kept well below DISPLAY_TILE=32 so the expensive
+                          # numpy/blur work happens on a much smaller canvas)
+
+
+def _smooth_upscale_small(mask_surf, small_size):
+    """Two-step smoothscale from the tile-grid mask up to small_size (the
+    cheap intermediate supersampled resolution, NOT full screen size)."""
+    grid = mask_surf.get_width()
+    cur = pygame.transform.smoothscale(mask_surf, (grid * 3, grid * 3))
+    cur = pygame.transform.smoothscale(cur, (small_size, small_size))
+    return cur
+
+
+def render_world(world, player, npcs_visible):
     screen.fill((15, 10, 22))
 
-    # shake offset jiggles the camera briefly on impact
-    cam_pixel_x = player.x * DISPLAY_TILE - SCREEN_W / 2 + shake[0]
-    cam_pixel_y = player.y * DISPLAY_TILE - SCREEN_H / 2 + shake[1]
+    # Fractional camera: player sprite is always centered on screen.
+    # cam_pixel_x/y = world-pixel coordinate of the viewport's top-left corner.
+    cam_pixel_x = player.x * DISPLAY_TILE - SCREEN_W / 2
+    cam_pixel_y = player.y * DISPLAY_TILE - SCREEN_H / 2
 
+    # First tile that touches the viewport (floor so partial left/top tiles show)
     first_tile_x = math.floor(cam_pixel_x / DISPLAY_TILE)
     first_tile_y = math.floor(cam_pixel_y / DISPLAY_TILE)
 
+    # ---- Organic terrain pass: smooth, flat-colored water/grass/wolf-grass ----
+    margin = _TERRAIN_MARGIN
+    grid = _TERRAIN_GRID
+    land_mask = pygame.Surface((grid, grid))
+    wolf_mask = pygame.Surface((grid, grid))
+    any_wolf_grass = False
+    for gy in range(grid):
+        world_ty = first_tile_y - margin + gy
+        for gx in range(grid):
+            world_tx = first_tile_x - margin + gx
+            if 0 <= world_tx < MAP_W and 0 <= world_ty < MAP_H:
+                tile_id = world[world_ty][world_tx]
+            else:
+                tile_id = WATER
+            is_land = tile_id not in (WATER, DOCK)
+            is_wolf = tile_id == WOLF_GRASS
+            if is_wolf:
+                any_wolf_grass = True
+            land_mask.set_at((gx, gy), (255, 255, 255) if is_land else (0, 0, 0))
+            wolf_mask.set_at((gx, gy), (255, 255, 255) if is_wolf else (0, 0, 0))
+
+    # Do the expensive blur/numpy work at a much smaller intermediate size --
+    # the blur already softens detail, so doing this at full DISPLAY_TILE
+    # resolution would be wasted work. We upscale to full size at the very
+    # end with one cheap smoothscale call.
+    small_size = grid * _TERRAIN_SUPERSAMPLE
+    terrain_px_size = grid * DISPLAY_TILE
+
+    land_small = _smooth_upscale_small(land_mask, small_size)
+    land_red_array = _surfarray.array_red(land_small) if _HAS_SURFARRAY else None
+
+    terrain_small = pygame.Surface((small_size, small_size))
+    terrain_small.fill(ORGANIC_WATER_COLOR)
+    land_layer = _colored_layer_with_mask_alpha(land_small, ORGANIC_LAND_COLOR, land_red_array)
+    terrain_small.blit(land_layer, (0, 0))
+
+    if any_wolf_grass:
+        wolf_small = _smooth_upscale_small(wolf_mask, small_size)
+        wolf_layer = _colored_layer_with_mask_alpha(wolf_small, ORGANIC_WOLF_LAND_COLOR)
+        terrain_small.blit(wolf_layer, (0, 0))
+
+    # Hand-drawn-style wobbly outline along each coastline, drawn at the
+    # small resolution too (cheap, and the wobble scales up fine).
+    _draw_hand_drawn_outline(terrain_small, land_red_array, ORGANIC_OUTLINE_COLOR,
+                              (first_tile_x, first_tile_y), scale=1)
+
+    # One cheap final upscale to full screen resolution.
+    terrain_surf = pygame.transform.smoothscale(terrain_small, (terrain_px_size, terrain_px_size))
+
+    # Blit the organic terrain onto the screen, offset so the margin tiles
+    # line up correctly with the rest of the (non-terrain) tile rendering.
+    terrain_origin_x = (first_tile_x - margin) * DISPLAY_TILE - cam_pixel_x
+    terrain_origin_y = (first_tile_y - margin) * DISPLAY_TILE - cam_pixel_y
+    screen.blit(terrain_surf, (terrain_origin_x, terrain_origin_y))
+
+    # ---- Structure/decoration pass: huts, paths, trees, rocks, etc. ----
+    # (unchanged from before -- still drawn as regular pixel-art tiles,
+    # skipping the base terrain tiles since the organic pass already covered them)
     for ty_offset in range(VIEW_TILES_ACROSS + 1):
         world_ty = first_tile_y + ty_offset
         if not (0 <= world_ty < MAP_H):
@@ -1595,36 +1658,31 @@ def render_world(world, player, npcs_visible, floating_texts=(), shake=(0, 0)):
             if not (0 <= world_tx < MAP_W):
                 continue
             tile_id = world[world_ty][world_tx]
-            img = TILE_IMAGES.get(tile_id, TILE_IMAGES[WATER])
+            if tile_id in TERRAIN_BASE_TILES:
+                continue
+            img = TILE_IMAGES.get(tile_id)
+            if img is None:
+                continue
             sx = world_tx * DISPLAY_TILE - cam_pixel_x
             sy = world_ty * DISPLAY_TILE - cam_pixel_y
             screen.blit(img, (sx, sy))
 
+    # Player sprite is always centered on screen
     px = SCREEN_W / 2 - DISPLAY_TILE / 2
     py = SCREEN_H / 2 - DISPLAY_TILE / 2
 
+    # NPCs / enemies relative to the fractional camera
     for entity in npcs_visible:
         ex = (entity.x - player.x) * DISPLAY_TILE + SCREEN_W / 2 - DISPLAY_TILE / 2
         ey = (entity.y - player.y) * DISPLAY_TILE + SCREEN_H / 2 - DISPLAY_TILE / 2
         if -DISPLAY_TILE <= ex <= SCREEN_W and -DISPLAY_TILE <= ey <= SCREEN_H:
             screen.blit(entity.sprite, (ex, ey))
-            if isinstance(entity, Werewolf) and entity.flash_timer > 0:
-                flash_surf = pygame.Surface((DISPLAY_TILE, DISPLAY_TILE), pygame.SRCALPHA)
-                flash_surf.fill((255, 60, 60, 160))
-                screen.blit(flash_surf, (ex, ey))
 
     screen.blit(player.sprite, (px, py))
 
-    # Floating pop-up texts (world-anchored, float upward, fade out)
-    for ft in floating_texts:
-        alpha = max(0, int(255 * (1.0 - ft.age / ft.lifetime)))
-        rise = int(ft.age * 28)
-        ftx = (ft.x - player.x) * DISPLAY_TILE + SCREEN_W / 2
-        fty = (ft.y - player.y) * DISPLAY_TILE + SCREEN_H / 2 - rise
-        if -40 <= ftx <= SCREEN_W + 40 and -40 <= fty <= SCREEN_H + 40:
-            txt_s = FONT.render(ft.text, True, ft.color)
-            txt_s.set_alpha(alpha)
-            screen.blit(txt_s, (ftx, fty))
+
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -1681,14 +1739,6 @@ def main():
 
     last_attack_time = 0
     attack_cooldown = 400  # ms
-
-    floating_texts = []
-    shake_timer = 0.0
-    shake_x = shake_y = 0
-    damage_text_timer = 0.0
-    player_died = False
-    WOLF_RESPAWN_INTERVAL = 45.0
-    island_respawn_timers = [WOLF_RESPAWN_INTERVAL] * len(island_centers)
 
     # Track whether the trapdoor area has been "stepped into" to flag market state
     market_entry_tile = (market_x + 3, market_y + 1)
@@ -1770,71 +1820,41 @@ def main():
                     now = pygame.time.get_ticks()
                     if now - last_attack_time > attack_cooldown:
                         last_attack_time = now
-                        hit_any = False
                         for wolf in list(werewolves):
                             dist = ((player.x - wolf.x) ** 2 + (player.y - wolf.y) ** 2) ** 0.5
                             if dist < 1.6:
-                                hit_any = True
                                 if wolf.take_damage(20):
                                     werewolves.remove(wolf)
                                     if wolf.has_chicken:
                                         state.chickens += 1
-                                        floating_texts.append(FloatingText(wolf.x, wolf.y - 1, "+1 Chicken!", (255, 215, 60)))
-                                    floating_texts.append(FloatingText(wolf.x, wolf.y, "Wolf down!", (220, 80, 80)))
-                                else:
-                                    floating_texts.append(FloatingText(wolf.x, wolf.y - 1, "-20", (255, 140, 60)))
-                        if not hit_any:
-                            floating_texts.append(FloatingText(player.x, player.y - 1, "Miss!", (170, 170, 170)))
-
-                if event.key == pygame.K_q:
-                    on_wolf_island = any(
-                        ((player.x - ix) ** 2 + (player.y - iy) ** 2) ** 0.5 < r + 5
-                        for ix, iy, r in island_centers
-                    )
-                    if on_wolf_island:
-                        player.x, player.y = float(cx), float(cy + 5)
-                        player.on_water = False
-                        floating_texts.append(FloatingText(player.x, player.y - 1, "Back to main island!", (130, 205, 255)))
 
         # ---------------- movement ----------------
         keys = pygame.key.get_pressed()
-        sprinting = (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]) and player.stamina > 0
-        speed_mult = 1.75 if sprinting else 1.0
-        if sprinting:
-            player.stamina = max(0.0, player.stamina - 45 * dt)
-        else:
-            player.stamina = min(player.max_stamina, player.stamina + 22 * dt)
-
         dx = dy = 0.0
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-            dx = -player.speed * speed_mult * dt
+            dx = -player.speed * dt
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-            dx = player.speed * speed_mult * dt
+            dx = player.speed * dt
         if keys[pygame.K_UP] or keys[pygame.K_w]:
-            dy = -player.speed * speed_mult * dt
+            dy = -player.speed * dt
         if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-            dy = player.speed * speed_mult * dt
+            dy = player.speed * dt
 
         if dx and dy:  # normalize diagonal movement
             dx *= 0.7071
             dy *= 0.7071
 
+        # Crossing onto WATER is blocked unless Kyle has a glider, in which
+        # case he "glides" across automatically.
         nx, ny = player.x + dx, player.y + dy
         tx, ty = int(nx), int(ny)
         if 0 <= tx < MAP_W and 0 <= ty < MAP_H:
             target_tile = world[ty][tx]
-            if target_tile in SOLID_TILES and target_tile != WATER:
+            if target_tile == WATER and state.gliders <= 0:
+                pass  # can't cross water without a glider
+            elif target_tile in SOLID_TILES and target_tile != WATER:
                 pass  # walls block movement
-            elif target_tile == WATER:
-                if state.gliders > 0:
-                    if not player.on_water:
-                        state.gliders -= 1
-                        player.on_water = True
-                        floating_texts.append(FloatingText(player.x, player.y - 1, "Gliding!", (130, 210, 255)))
-                    player.x, player.y = nx, ny
-                # else blocked — no glider
             else:
-                player.on_water = False
                 player.x, player.y = nx, ny
 
         # ---------------- wild chicken pickups (main island) ----------------
