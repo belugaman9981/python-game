@@ -1891,7 +1891,7 @@ def main():
     if state.won:
         show_win_screen(screen)
 
-    pygame.quit()
+    pygame.quit() 
     sys.exit()
 
 
