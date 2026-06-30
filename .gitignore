@@ -2,7 +2,7 @@
 bin-debug/
 bin-release/
 [Oo]bj/
-[Bb]in/
+[Bb]in/ 
 
 # Other files and folders
 .settings/
@@ -10,7 +10,7 @@ bin-release/
 # Executables
 *.swf
 *.air
-*.ipa
+*.i
 *.apk
 
 # Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
