@@ -17,7 +17,7 @@ Story:
     risky -- 50/50 chance Noah finds out and penalizes Kyle.
 
     Win condition: sell enough chicken to the merchant, then Kyle goes
-    home to find his dog.
+    home to find his dog. 
 
 Controls:
     WASD / Arrow keys : move
