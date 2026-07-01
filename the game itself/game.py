@@ -4,7 +4,7 @@ Kyle Jordan's Maze Adventure (Tile-Based Edition)
 A 700x700 tile world (16px tiles -> 11,200 x 11,200 pixels total).
 You can only see roughly a 10-15 tile radius around Kyle at any time.
 
-Story:
+Story: 
     Kyle Jordan loves chicken and is stuck in a magical maze. There's a
     main island, plus a hut hiding a secret black market underneath it.
     Noah Ficsher (18) has been stuck here forever and acts as Kyle's
