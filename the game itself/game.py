@@ -37,7 +37,7 @@ import math
 # ---------------------------------------------------------------------------
 # Core constants
 # ---------------------------------------------------------------------------
-pygame.init()
+pygame.init() 
 
 TILE = 16                      # logical tile size (game-logic units)
 SCALE = 2                      # display scale: each logical pixel → 2×2 screen pixels
