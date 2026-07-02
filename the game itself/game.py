@@ -1845,7 +1845,7 @@ def render_world(world, player, npcs_visible):
                 tile_id = world[world_ty][world_tx]
             else:
                 tile_id = WATER
-            is_land = tile_id not in (WATER, DOCK)
+            is_land = tile_id not in (WATER, DOCK, PILING)
             is_wolf = tile_id == WOLF_GRASS
             if is_wolf:
                 any_wolf_grass = True
