@@ -97,10 +97,13 @@ DEAD_TREE     = 29   # impassable bare/dead tree, for werewolf islands
 WOLF_ROCK     = 30   # impassable jagged dark boulder, for werewolf islands
 BONES         = 31   # walkable wolf-grass with scattered bones (decorative)
 DARK_PATCH    = 32   # walkable scorched/dark grass patch (decorative)
+PILING        = 33   # impassable wooden post poking out of the water (decorative, next to docks)
+CRATE         = 34   # walkable dock decoration (wooden crate sitting on the planks)
+ROPE_COIL     = 35   # walkable dock decoration (coiled rope sitting on the planks)
 
 SOLID_TILES = {
     HUT_WALL, MARKET_WALL, WATER, TREE, ROCK, VILLAGE_WALL, TREE2,
-    DEAD_TREE, WOLF_ROCK,
+    DEAD_TREE, WOLF_ROCK, PILING,
 } | set(FOUNTAIN_TILES.values())
 
 
@@ -510,6 +513,52 @@ def _make_village_floor():
     img = _HUT_FLOOR.copy()
     return img
 
+def _make_piling():
+    """A wooden post poking up out of the water, for visual detail
+    alongside the dock. Sits on a tile that's otherwise plain water, so it
+    doesn't introduce any new collision behavior beyond what water already
+    has (blocked without a glider)."""
+    img = _WATER.copy()
+    rows = [
+        "................",
+        "................",
+        ".......DD.......",
+        "......DddD......",
+        "......DddD......",
+        "......DddD......",
+        "......DddD......",
+        "......DddD......",
+        ".....DDddDD.....",
+        "......ddd.......",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+    ]
+    overlay = make_surface(rows, {".": None, "D": (90, 60, 32), "d": (118, 82, 44)})
+    img.blit(overlay, (0, 0))
+    return img
+
+def _make_crate():
+    """A wooden crate sitting on the dock -- purely decorative, drawn on
+    top of the regular dock-plank art."""
+    img = _make_dock()
+    pygame.draw.rect(img, (152, 110, 60), (3, 4, 10, 9))
+    pygame.draw.rect(img, (108, 74, 38), (3, 4, 10, 9), 1)
+    pygame.draw.line(img, (108, 74, 38), (3, 8), (12, 8))
+    pygame.draw.line(img, (108, 74, 38), (8, 4), (8, 12))
+    return img
+
+def _make_rope_coil():
+    """A coiled rope resting on the dock -- purely decorative."""
+    img = _make_dock()
+    pygame.draw.circle(img, (198, 170, 112), (8, 8), 5, 2)
+    pygame.draw.circle(img, (198, 170, 112), (8, 8), 3, 1)
+    pygame.draw.circle(img, (160, 130, 80), (8, 8), 1)
+    return img
+
 def _make_village_wall():
     """A second building's wall, in a different stone tone than the merchant's hut."""
     return _make_tile([
@@ -647,6 +696,9 @@ TILE_IMAGES = {
     WOLF_ROCK:    _make_wolf_rock(),
     BONES:        _make_bones(),
     DARK_PATCH:   _make_dark_patch(),
+    PILING:       _make_piling(),
+    CRATE:        _make_crate(),
+    ROPE_COIL:    _make_rope_coil(),
 }
 
 # Register the 3x3 fountain as 9 distinct tiles, each a slice of one
@@ -928,6 +980,37 @@ def carve_dock(world, shore_x, shore_y, direction, length=10):
                 world[py][px] = DOCK
 
 
+def decorate_dock(world, shore_x, shore_y, direction, length=10):
+    """Adds purely visual detail to a dock built by carve_dock(): wooden
+    pilings poking out of the water on both open edges, plus a crate and a
+    coil of rope resting on the planks. None of this changes gameplay --
+    pilings occupy water tiles that were already impassable without a
+    glider, and the crate/rope are drawn on tiles that stay walkable."""
+    dx, dy = direction
+    x, y = shore_x, shore_y
+    for i in range(length):
+        x += dx
+        y += dy
+
+        # The two open-water tiles just outside the 2-tile-wide dock band
+        # (mirrors the perpendicular offset carve_dock uses to widen the dock).
+        outer1_x, outer1_y = x + dy, y - dx
+        outer2_x, outer2_y = x - 2 * dy, y + 2 * dx
+
+        if i % 3 == 1:
+            if 0 <= outer1_x < MAP_W and 0 <= outer1_y < MAP_H and world[outer1_y][outer1_x] == WATER:
+                world[outer1_y][outer1_x] = PILING
+            if 0 <= outer2_x < MAP_W and 0 <= outer2_y < MAP_H and world[outer2_y][outer2_x] == WATER:
+                world[outer2_y][outer2_x] = PILING
+
+        # A crate near the shore end and a rope coil a bit further out,
+        # placed only if that tile is still plain dock (don't overwrite).
+        if i == 2 and 0 <= x < MAP_W and 0 <= y < MAP_H and world[y][x] == DOCK:
+            world[y][x] = CRATE
+        if i == 5 and 0 <= x < MAP_W and 0 <= y < MAP_H and world[y][x] == DOCK:
+            world[y][x] = ROPE_COIL
+
+
 def _carve_straight_path(world, start, end):
     """Carves a walkable PATH line (3 tiles wide) between two points on GRASS."""
     x, y = start
@@ -967,6 +1050,7 @@ def decorate_world(world, cx, cy, main_radius, hut_x, hut_y):
     shore_x = int(cx + main_radius * 0.95 * math.cos(dock_angle))
     shore_y = int(cy + main_radius * 0.95 * math.sin(dock_angle))
     carve_dock(world, shore_x, shore_y, direction=(1, 0), length=12)
+    decorate_dock(world, shore_x, shore_y, direction=(1, 0), length=12)
     _carve_straight_path(world, (cx, cy), (shore_x - 3, shore_y))
 
     # --- scatter rocks near the coastline (echoes a rocky/canyon edge) ---
