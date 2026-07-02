@@ -100,10 +100,11 @@ DARK_PATCH    = 32   # walkable scorched/dark grass patch (decorative)
 PILING        = 33   # impassable wooden post poking out of the water (decorative, next to docks)
 CRATE         = 34   # walkable dock decoration (wooden crate sitting on the planks)
 ROPE_COIL     = 35   # walkable dock decoration (coiled rope sitting on the planks)
+LANTERN       = 36   # impassable lamp post with a baked-in warm glow (plaza decoration)
 
 SOLID_TILES = {
     HUT_WALL, MARKET_WALL, WATER, TREE, ROCK, VILLAGE_WALL, TREE2,
-    DEAD_TREE, WOLF_ROCK, PILING,
+    DEAD_TREE, WOLF_ROCK, PILING, LANTERN,
 } | set(FOUNTAIN_TILES.values())
 
 
@@ -559,6 +560,20 @@ def _make_rope_coil():
     pygame.draw.circle(img, (160, 130, 80), (8, 8), 1)
     return img
 
+def _make_lantern():
+    """A lamp post for the plaza, with a soft warm halo baked right into
+    the tile art so it doesn't need any per-frame lighting pass."""
+    img = _make_plaza()
+    halo = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+    center = (8, 5)
+    for r, alpha in ((6, 35), (4, 65), (2, 110)):
+        pygame.draw.circle(halo, (255, 200, 110, alpha), center, r)
+    img.blit(halo, (0, 0))
+    pygame.draw.rect(img, (60, 45, 30), (7, 8, 2, 7))       # post
+    pygame.draw.rect(img, (40, 32, 24), (5, 3, 6, 5))        # lamp housing
+    pygame.draw.rect(img, (255, 225, 140), (6, 4, 4, 3))     # lit glass
+    return img
+
 def _make_village_wall():
     """A second building's wall, in a different stone tone than the merchant's hut."""
     return _make_tile([
@@ -699,6 +714,7 @@ TILE_IMAGES = {
     PILING:       _make_piling(),
     CRATE:        _make_crate(),
     ROPE_COIL:    _make_rope_coil(),
+    LANTERN:      _make_lantern(),
 }
 
 # Register the 3x3 fountain as 9 distinct tiles, each a slice of one
@@ -852,12 +868,66 @@ def make_chicken():
     return make_surface(rows, p)
 
 
+def make_golden_chicken():
+    """A rarer, shinier chicken variant -- same silhouette as the regular
+    chicken, recolored gold with a small sparkle, worth more chicken when
+    collected."""
+    p = {".": None, "w": (255, 226, 130), "y": (255, 195, 30), "r": (215, 55, 45),
+         "o": (255, 165, 40), "s": (255, 255, 220)}
+    rows = [
+        "......oooo......",
+        ".....owwwwo..s..",
+        "....owwwwwwo....",
+        "....rwwwwwww....",
+        "....wwwwwwww....",
+        "s...wwwwwwww....",
+        ".....wwwwww.....",
+        ".....yy.yy......",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+    ]
+    return make_surface(rows, p)
+
+
+def make_seagull():
+    """A small gull silhouette in flight -- two simple wing strokes, no
+    body detail needed since it reads fine at this scale while circling."""
+    p = {".": None, "w": (248, 248, 250)}
+    rows = [
+        "................",
+        "................",
+        "................",
+        "....ww....ww....",
+        "...www....www...",
+        "..ww........ww..",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+        "................",
+    ]
+    return make_surface(rows, p)
+
+
 SPRITES = {
     "kyle":     make_kyle(),
     "noah":     make_noah(),
     "merchant": make_merchant(),
     "werewolf": make_werewolf(),
     "chicken":  make_chicken(),
+    "golden_chicken": make_golden_chicken(),
+    "seagull":  make_seagull(),
 }
 
 # Scale all tiles and sprites up to DISPLAY_TILE (32 px) for crisp pixel-art look
@@ -909,7 +979,11 @@ def generate_world():
 
 def carve_hut(world, hx, hy):
     """Carves a small 5x4 hut on the main island at (hx, hy), with a desk and
-    mat inside that hide the entrance to the black market below."""
+    mat inside that hide the entrance to the black market below.
+
+    BUGFIX: this used to wall off the hut completely with no doorway, so
+    there was no way to walk inside and reach the desk. Now leaves a gap
+    in the middle of the south wall as an entrance."""
     w, h = 5, 4
     for y in range(hy - 1, hy + h + 1):
         for x in range(hx - 1, hx + w + 1):
@@ -917,6 +991,10 @@ def carve_hut(world, hx, hy):
                 x == hx - 1 or x == hx + w or y == hy - 1 or y == hy + h
             )
             world[y][x] = HUT_WALL if on_border else HUT_FLOOR
+
+    # Doorway: open a gap in the south wall so Kyle can actually get inside.
+    door_x, door_y = hx + w // 2, hy + h
+    world[door_y][door_x] = HUT_FLOOR
 
     desk_pos = (hx + w // 2, hy + h // 2)
     world[desk_pos[1]][desk_pos[0]] = DESK
@@ -935,13 +1013,16 @@ def carve_market_room(world, mx, my):
 
 def carve_village_hut(world, vx, vy, w=4, h=4):
     """A second, smaller building near the plaza -- just for visual variety,
-    no interaction tied to it (yet)."""
+    no interaction tied to it (yet). Also fixed to have a doorway, matching
+    the merchant hut fix."""
     for y in range(vy - 1, vy + h + 1):
         for x in range(vx - 1, vx + w + 1):
             on_border = (
                 x == vx - 1 or x == vx + w or y == vy - 1 or y == vy + h
             )
             world[y][x] = VILLAGE_WALL if on_border else VILLAGE_FLOOR
+    door_x, door_y = vx + w // 2, vy + h
+    world[door_y][door_x] = VILLAGE_FLOOR
 
 
 def carve_plaza(world, cx, cy, radius=9):
@@ -962,6 +1043,15 @@ def carve_plaza(world, cx, cy, radius=9):
     for row in range(fountain_size):
         for col in range(fountain_size):
             world[top_left_y + row][top_left_x + col] = FOUNTAIN_TILES[(row, col)]
+
+
+def decorate_plaza_lanterns(world, cx, cy, offset=6):
+    """Places four lamp posts around the plaza, diagonally offset from the
+    fountain so they don't sit on the cardinal paths leading in/out."""
+    for ddx, ddy in ((offset, offset), (-offset, offset), (offset, -offset), (-offset, -offset)):
+        lx, ly = cx + ddx, cy + ddy
+        if 0 <= lx < MAP_W and 0 <= ly < MAP_H and world[ly][lx] == PLAZA:
+            world[ly][lx] = LANTERN
 
 
 def carve_dock(world, shore_x, shore_y, direction, length=10):
@@ -1034,6 +1124,7 @@ def decorate_world(world, cx, cy, main_radius, hut_x, hut_y):
     # --- town plaza with fountain, placed between player start and hut ---
     plaza_x, plaza_y = cx, cy - 2
     carve_plaza(world, plaza_x, plaza_y, radius=9)
+    decorate_plaza_lanterns(world, plaza_x, plaza_y)
 
     # --- a second village building near the plaza, opposite the merchant hut ---
     village_x, village_y = cx - 22, cy - 10
@@ -1124,7 +1215,7 @@ def decorate_world(world, cx, cy, main_radius, hut_x, hut_y):
         if flower_count >= 120:
             break
 
-    return plaza_x, plaza_y, village_x, village_y
+    return plaza_x, plaza_y, village_x, village_y, shore_x, shore_y
 
 
 def decorate_wolf_island(world, ix, iy, r, seed=0):
@@ -1256,7 +1347,15 @@ def spawn_wild_chickens(world, cx, cy, main_radius, hut_x, hut_y, village_x, vil
         if any(((tx - ox) ** 2 + (ty - oy) ** 2) < 25 for ox, oy in positions):
             continue
         positions.append((wx, wy))
-    return [WildChicken(px, py) for px, py in positions]
+
+    chickens = []
+    for i, (px, py) in enumerate(positions):
+        # Roughly 1 in 5 wild chickens is the rarer golden variant.
+        if rng.random() < 0.2:
+            chickens.append(GoldenChicken(px, py))
+        else:
+            chickens.append(WildChicken(px, py))
+    return chickens
 
 
 
@@ -1438,6 +1537,38 @@ class WildChicken(Entity):
     def __init__(self, x, y):
         super().__init__(x, y, SPRITES["chicken"])
         self.collected = False
+        self.value = 1
+
+
+class GoldenChicken(WildChicken):
+    """A rare, shinier chicken variant worth more when collected. Harder
+    to come by -- spawn_wild_chickens only makes a small fraction of the
+    scattered chickens golden."""
+    def __init__(self, x, y):
+        super().__init__(x, y)
+        self.sprite = SPRITES["golden_chicken"]
+        self.value = 3
+
+
+class Seagull(Entity):
+    """A gull that lazily circles over the coastline near the dock --
+    purely decorative: no collision, no interactions, just atmosphere."""
+    def __init__(self, center_x, center_y, radius, speed, phase=0.0):
+        self.center_x = center_x
+        self.center_y = center_y
+        self.radius = radius
+        self.speed = speed  # radians per second
+        self.angle = phase
+        x = center_x + radius * math.cos(phase)
+        y = center_y + radius * math.sin(phase) * 0.6
+        super().__init__(x, y, SPRITES["seagull"])
+
+    def update(self, dt):
+        self.angle += self.speed * dt
+        self.x = self.center_x + self.radius * math.cos(self.angle)
+        # Flattened ellipse so the flight path reads more like a gull
+        # circling low over the water than a perfect orbit.
+        self.y = self.center_y + self.radius * math.sin(self.angle) * 0.6
 
 
 # ---------------------------------------------------------------------------
@@ -1814,7 +1945,7 @@ def main():
     merchant = Merchant(*merchant_pos)
 
     # Decorate the main island with trees, flowers, and a dirt path
-    plaza_x, plaza_y, village_x, village_y = decorate_world(world, cx, cy, main_radius, hut_x, hut_y)
+    plaza_x, plaza_y, village_x, village_y, shore_x, shore_y = decorate_world(world, cx, cy, main_radius, hut_x, hut_y)
 
     # Decorate each werewolf island with dead trees, jagged rocks, bones, etc.
     for i, (ix, iy, r) in enumerate(island_centers):
@@ -1844,6 +1975,12 @@ def main():
 
     last_attack_time = 0
     attack_cooldown = 400  # ms
+
+    # A handful of gulls lazily circling over the water near the dock.
+    seagulls = [
+        Seagull(shore_x, shore_y, radius=12 + i * 4, speed=0.3 + i * 0.07, phase=i * (6.283 / 4))
+        for i in range(4)
+    ]
 
     # Track whether the trapdoor area has been "stepped into" to flag market state
     market_entry_tile = (market_x + 3, market_y + 1)
@@ -1979,7 +2116,7 @@ def main():
             dist = ((player.x - chick.x) ** 2 + (player.y - chick.y) ** 2) ** 0.5
             if dist < 1.0:
                 chick.collected = True
-                state.chickens += 1
+                state.chickens += chick.value
 
         # ---------------- werewolves ----------------
         for wolf in werewolves:
@@ -1987,6 +2124,10 @@ def main():
             dist = ((player.x - wolf.x) ** 2 + (player.y - wolf.y) ** 2) ** 0.5
             if dist < 0.8:
                 player.health -= 60 * dt
+
+        # ---------------- seagulls ----------------
+        for gull in seagulls:
+            gull.update(dt)
 
         # ---------------- death check (new: previously HP could go below
         # 0 forever with no game-over handling at all) ----------------
@@ -2003,6 +2144,7 @@ def main():
             visible_npcs.append(merchant)
         visible_npcs.extend(werewolves)
         visible_npcs.extend(chick for chick in wild_chickens if not chick.collected)
+        visible_npcs.extend(seagulls)
 
         render_world(world, player, visible_npcs)
         draw_hud(screen, state, player) 
