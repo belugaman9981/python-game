@@ -17,7 +17,7 @@ Story:
     risky -- 50/50 chance Noah finds out and penalizes Kyle.
 
     Win condition: sell enough chicken to the merchant, then Kyle goes
-    home to find his dog. 
+    home to find his dog.
 
 Controls:
     WASD / Arrow keys : move
@@ -37,7 +37,7 @@ import math
 # ---------------------------------------------------------------------------
 # Core constants
 # ---------------------------------------------------------------------------
-pygame.init() 
+pygame.init()
 
 TILE = 16                      # logical tile size (game-logic units)
 SCALE = 2                      # display scale: each logical pixel → 2×2 screen pixels
@@ -546,11 +546,11 @@ def _make_dead_tree():
         "....tt.t.tt.....",
         ".....tttt.......",
         "......ttt.......",
-        ".......t........",
-        ".......t........",
+        "................",
+        "................",
         "......ttt.......",
-        ".......t........",
-        ".......t........",
+        "................",
+        "................",
         "................",
     ]
     overlay = make_surface(rows, {".": None, "t": (75, 60, 48)})
@@ -1250,11 +1250,20 @@ class Player(Entity):
         self.max_health = 100
 
     def try_move(self, dx, dy, world):
-        nx, ny = self.x + dx, self.y + dy
-        tx, ty = int(nx), int(ny)
-        if 0 <= tx < MAP_W and 0 <= ty < MAP_H:
-            if world[ty][tx] not in SOLID_TILES:
-                self.x, self.y = nx, ny
+        """Moves along X and Y independently, so bumping into a wall on one
+        axis doesn't also block movement along the other axis (this is what
+        lets Kyle slide smoothly along walls/coastlines instead of getting
+        fully stopped when a diagonal step would clip a solid tile corner)."""
+        if dx:
+            nx = self.x + dx
+            tx, ty = int(nx), int(self.y)
+            if 0 <= tx < MAP_W and 0 <= ty < MAP_H and world[ty][tx] not in SOLID_TILES:
+                self.x = nx
+        if dy:
+            ny = self.y + dy
+            tx, ty = int(self.x), int(ny)
+            if 0 <= tx < MAP_W and 0 <= ty < MAP_H and world[ty][tx] not in SOLID_TILES:
+                self.y = ny
 
 
 class Werewolf(Entity):
@@ -1491,6 +1500,22 @@ def show_win_screen(surface):
     pygame.time.wait(4000)
 
 
+def show_lose_screen(surface):
+    """New: shown when Kyle's HP drops to 0 (previously nothing happened
+    on death -- the game just kept running with negative HP)."""
+    surface.fill((10, 10, 15))
+    draw_text(
+        surface,
+        "Kyle collapses, exhausted and wounded...\n"
+        "The maze claims another wanderer.\n\nGAME OVER",
+        (40, SCREEN_H // 2 - 50),
+        font=BIG_FONT,
+        color=(200, 60, 60),
+    )
+    pygame.display.flip()
+    pygame.time.wait(4000)
+
+
 # ---------------------------------------------------------------------------
 # Rendering: only draw tiles within the visibility radius (camera-based)
 # ---------------------------------------------------------------------------
@@ -1681,10 +1706,6 @@ def render_world(world, player, npcs_visible):
     screen.blit(player.sprite, (px, py))
 
 
-
-
-
-
 # ---------------------------------------------------------------------------
 # Main game
 # ---------------------------------------------------------------------------
@@ -1845,17 +1866,27 @@ def main():
             dy *= 0.7071
 
         # Crossing onto WATER is blocked unless Kyle has a glider, in which
-        # case he "glides" across automatically.
-        nx, ny = player.x + dx, player.y + dy
-        tx, ty = int(nx), int(ny)
-        if 0 <= tx < MAP_W and 0 <= ty < MAP_H:
-            target_tile = world[ty][tx]
-            if target_tile == WATER and state.gliders <= 0:
-                pass  # can't cross water without a glider
-            elif target_tile in SOLID_TILES and target_tile != WATER:
-                pass  # walls block movement
-            else:
-                player.x, player.y = nx, ny
+        # case he "glides" across automatically. X and Y are resolved as two
+        # SEPARATE checks (instead of one combined int(nx), int(ny) check)
+        # so Kyle can slide smoothly along a wall/coastline edge instead of
+        # getting fully stopped whenever a diagonal step clips a solid
+        # tile's corner.
+        def _tile_passable(tile_id):
+            if tile_id == WATER:
+                return state.gliders > 0
+            return tile_id not in SOLID_TILES
+
+        if dx:
+            nx = player.x + dx
+            tx, ty = int(nx), int(player.y)
+            if 0 <= tx < MAP_W and 0 <= ty < MAP_H and _tile_passable(world[ty][tx]):
+                player.x = nx
+
+        if dy:
+            ny = player.y + dy
+            tx, ty = int(player.x), int(ny)
+            if 0 <= tx < MAP_W and 0 <= ty < MAP_H and _tile_passable(world[ty][tx]):
+                player.y = ny
 
         # ---------------- wild chicken pickups (main island) ----------------
         for chick in wild_chickens:
@@ -1872,6 +1903,12 @@ def main():
             dist = ((player.x - wolf.x) ** 2 + (player.y - wolf.y) ** 2) ** 0.5
             if dist < 0.8:
                 player.health -= 60 * dt
+
+        # ---------------- death check (new: previously HP could go below
+        # 0 forever with no game-over handling at all) ----------------
+        if player.health <= 0:
+            player.health = 0
+            state.game_over = True
 
         if state.game_over:
             running = False
@@ -1890,6 +1927,8 @@ def main():
 
     if state.won:
         show_win_screen(screen)
+    elif player.health <= 0:
+        show_lose_screen(screen)
 
     pygame.quit() 
     sys.exit()
