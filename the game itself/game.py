@@ -1419,6 +1419,12 @@ class Entity:
         self.x = x  # tile coordinates (float, for smooth movement)
         self.y = y
         self.sprite = sprite
+        # Idle-bob animation support (opt-in via bob_amplitude > 0). Each
+        # entity gets its own random phase so multiple bobbing NPCs don't
+        # all sway in perfect unison.
+        self.bob_amplitude = 0.0  # screen pixels
+        self.bob_speed = 450.0    # ms per cycle
+        self._bob_phase = random.uniform(0, 6.283)
 
     @property
     def tile(self):
@@ -1512,6 +1518,8 @@ class Noah(Entity):
 
     def __init__(self, x, y):
         super().__init__(x, y, SPRITES["noah"])
+        self.bob_amplitude = 2.0
+        self.bob_speed = 500.0
 
     def get_dialogue(self, state: GameState):
         stage = min(state.mission_stage, len(self.DIALOGUE_BY_STAGE) - 1)
@@ -1528,6 +1536,8 @@ class Noah(Entity):
 class Merchant(Entity):
     def __init__(self, x, y):
         super().__init__(x, y, SPRITES["merchant"])
+        self.bob_amplitude = 1.6
+        self.bob_speed = 620.0
 
 
 class WildChicken(Entity):
@@ -1732,6 +1742,58 @@ def show_lose_screen(surface):
 
 
 # ---------------------------------------------------------------------------
+# Weather: a slow, purely cosmetic rain cycle. No gameplay effect -- doesn't
+# touch movement, combat, or visibility radius. Just a screen-space tint plus
+# some falling streaks that fade in and out over a long cycle.
+# ---------------------------------------------------------------------------
+RAIN_PERIOD = 90.0     # seconds for one full cycle
+RAIN_FRACTION = 0.35   # portion of the cycle that's actually raining
+RAIN_FADE = 0.06        # fraction of the cycle used to fade rain in/out
+
+
+def make_rain_drops(count=70):
+    """Screen-space raindrops (not tied to world coordinates -- a common,
+    cheap approximation that still reads fine at this resolution)."""
+    return [
+        [random.uniform(0, SCREEN_W), random.uniform(0, SCREEN_H),
+         random.uniform(220, 340), random.uniform(8, 14)]
+        for _ in range(count)
+    ]
+
+
+def compute_rain_intensity(elapsed_seconds):
+    """Returns 0..1: how hard it's raining right now, easing in/out at the
+    edges of the rain window instead of switching on/off abruptly."""
+    phase = (elapsed_seconds % RAIN_PERIOD) / RAIN_PERIOD
+    if phase > RAIN_FRACTION:
+        return 0.0
+    if phase < RAIN_FADE:
+        return phase / RAIN_FADE
+    if phase > RAIN_FRACTION - RAIN_FADE:
+        return (RAIN_FRACTION - phase) / RAIN_FADE
+    return 1.0
+
+
+def draw_weather_overlay(surface, rain_drops, intensity, dt):
+    """Draws a subtle blue-grey tint plus falling rain streaks over the
+    game viewport (not the HUD). Called only while intensity > 0."""
+    tint = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+    tint.fill((40, 55, 80, int(70 * intensity)))
+    surface.blit(tint, (0, 0))
+
+    alpha = int(170 * intensity)
+    color = (200, 215, 235, alpha)
+    for drop in rain_drops:
+        drop[1] += drop[2] * dt
+        if drop[1] > SCREEN_H:
+            drop[1] = -10
+            drop[0] = random.uniform(0, SCREEN_W)
+        streak = pygame.Surface((2, int(drop[3])), pygame.SRCALPHA)
+        streak.fill(color)
+        surface.blit(streak, (drop[0], drop[1]))
+
+
+# ---------------------------------------------------------------------------
 # Rendering: only draw tiles within the visibility radius (camera-based)
 # ---------------------------------------------------------------------------
 TERRAIN_BASE_TILES = {WATER, SAND, GRASS, WOLF_GRASS}
@@ -1915,6 +1977,8 @@ def render_world(world, player, npcs_visible):
     for entity in npcs_visible:
         ex = (entity.x - player.x) * DISPLAY_TILE + SCREEN_W / 2 - DISPLAY_TILE / 2
         ey = (entity.y - player.y) * DISPLAY_TILE + SCREEN_H / 2 - DISPLAY_TILE / 2
+        if entity.bob_amplitude:
+            ey += math.sin(pygame.time.get_ticks() / entity.bob_speed + entity._bob_phase) * entity.bob_amplitude
         if -DISPLAY_TILE <= ex <= SCREEN_W and -DISPLAY_TILE <= ey <= SCREEN_H:
             screen.blit(entity.sprite, (ex, ey))
 
@@ -1981,6 +2045,8 @@ def main():
         Seagull(shore_x, shore_y, radius=12 + i * 4, speed=0.3 + i * 0.07, phase=i * (6.283 / 4))
         for i in range(4)
     ]
+
+    rain_drops = make_rain_drops()
 
     # Track whether the trapdoor area has been "stepped into" to flag market state
     market_entry_tile = (market_x + 3, market_y + 1)
@@ -2147,6 +2213,11 @@ def main():
         visible_npcs.extend(seagulls)
 
         render_world(world, player, visible_npcs)
+
+        rain_intensity = compute_rain_intensity(pygame.time.get_ticks() / 1000.0)
+        if rain_intensity > 0:
+            draw_weather_overlay(screen, rain_drops, rain_intensity, dt)
+
         draw_hud(screen, state, player) 
 
         pygame.display.flip()
