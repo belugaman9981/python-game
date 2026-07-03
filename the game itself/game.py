@@ -401,6 +401,63 @@ def _make_tree2():
     img.blit(overlay, (0, 0))
     return img
 
+def _make_tree_canopy_overlay():
+    """Just the transparent-background canopy shape for TREE, with no
+    grass baked in -- used for the wind-sway animation so a rotated tree
+    reveals the organic terrain's grass underneath instead of dragging a
+    mismatched flat-grass square along with it."""
+    rows = [
+        "....sDDDDDDs....",
+        "...DGGgGGGGGDs..",
+        "..DGGGGGGGGGGDs.",
+        ".DGGGGGGGGGGGGDs",
+        ".DGGGhGGGGhGGGGs",
+        ".DGGGGGttGGGGGGs",
+        ".DGGGGttttGGGGGs",
+        ".DGGGGGttGGGGGGs",
+        ".DGGGGGGGGGGGGGs",
+        ".DGGhGGGGGGhGGGs",
+        ".DGGGGGGGGGGGGGs",
+        ".DGGGGGGGGGGGGDs",
+        "..DGGGGGGGGGGDs.",
+        "...sDDGGGGDDs...",
+        "....sssDDsss....",
+        "................",
+    ]
+    return make_surface(rows, {
+        ".": None,
+        "D": (28,100,35), "G": (50,145,58), "g": (72,178,82),
+        "h": (95,210,108), "t": (100,70,38), "s": (18,78,24),
+    })
+
+def _make_tree2_canopy_overlay():
+    """Same idea as _make_tree_canopy_overlay(), for the autumn/golden
+    TREE2 variant."""
+    rows = [
+        "....sDDDDDDs....",
+        "...DGGgGGGGGDs..",
+        "..DGGGGGGGGGGDs.",
+        ".DGGGGGGGGGGGGDs",
+        ".DGGGhGGGGhGGGGs",
+        ".DGGGGGttGGGGGGs",
+        ".DGGGGttttGGGGGs",
+        ".DGGGGGttGGGGGGs",
+        ".DGGGGGGGGGGGGGs",
+        ".DGGhGGGGGGhGGGs",
+        ".DGGGGGGGGGGGGGs",
+        ".DGGGGGGGGGGGGDs",
+        "..DGGGGGGGGGGDs.",
+        "...sDDGGGGDDs...",
+        "....sssDDsss....",
+        "................",
+    ]
+    return make_surface(rows, {
+        ".": None,
+        "D": (140,80,20), "G": (205,140,40), "g": (225,170,60),
+        "h": (240,195,90), "t": (100,70,38), "s": (95,55,15),
+    })
+
+
 def _make_rock():
     """A grey boulder sitting on grass, impassable."""
     img = _GRASS.copy()
@@ -934,6 +991,14 @@ SPRITES = {
 for _k in list(TILE_IMAGES.keys()):
     TILE_IMAGES[_k] = pygame.transform.scale(TILE_IMAGES[_k], (DISPLAY_TILE, DISPLAY_TILE))
 SPRITES = {k: pygame.transform.scale(v, (DISPLAY_TILE, DISPLAY_TILE)) for k, v in SPRITES.items()}
+
+# Canopy-only overlays (transparent background, no baked grass) for the
+# wind-sway tree animation -- kept separate from TILE_IMAGES so rotating
+# one doesn't drag a mismatched flat-grass square along with it.
+TREE_CANOPY = {
+    TREE: pygame.transform.scale(_make_tree_canopy_overlay(), (DISPLAY_TILE, DISPLAY_TILE)),
+    TREE2: pygame.transform.scale(_make_tree2_canopy_overlay(), (DISPLAY_TILE, DISPLAY_TILE)),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -1949,8 +2014,11 @@ def render_world(world, player, npcs_visible):
     screen.blit(terrain_surf, (terrain_origin_x, terrain_origin_y))
 
     # ---- Structure/decoration pass: huts, paths, trees, rocks, etc. ----
-    # (unchanged from before -- still drawn as regular pixel-art tiles,
-    # skipping the base terrain tiles since the organic pass already covered them)
+    # (mostly unchanged from before -- still drawn as regular pixel-art tiles,
+    # skipping the base terrain tiles since the organic pass already covered
+    # them -- except trees, which get a gentle wind-sway rotation instead of
+    # a static blit.)
+    ticks = pygame.time.get_ticks()
     for ty_offset in range(VIEW_TILES_ACROSS + 1):
         world_ty = first_tile_y + ty_offset
         if not (0 <= world_ty < MAP_H):
@@ -1962,11 +2030,24 @@ def render_world(world, player, npcs_visible):
             tile_id = world[world_ty][world_tx]
             if tile_id in TERRAIN_BASE_TILES:
                 continue
+            sx = world_tx * DISPLAY_TILE - cam_pixel_x
+            sy = world_ty * DISPLAY_TILE - cam_pixel_y
+
+            if tile_id in TREE_CANOPY:
+                # Small continuous rotation driven by a sine wave; each
+                # tree's phase comes from its world position so a whole
+                # grove doesn't sway in perfect unison.
+                phase = (world_tx * 0.7 + world_ty * 1.3) % 6.283
+                angle = math.sin(ticks / 900.0 + phase) * 4.0
+                canopy = pygame.transform.rotate(TREE_CANOPY[tile_id], angle)
+                off_x = (canopy.get_width() - DISPLAY_TILE) / 2
+                off_y = (canopy.get_height() - DISPLAY_TILE) / 2
+                screen.blit(canopy, (sx - off_x, sy - off_y))
+                continue
+
             img = TILE_IMAGES.get(tile_id)
             if img is None:
                 continue
-            sx = world_tx * DISPLAY_TILE - cam_pixel_x
-            sy = world_ty * DISPLAY_TILE - cam_pixel_y
             screen.blit(img, (sx, sy))
 
     # Player sprite is always centered on screen
