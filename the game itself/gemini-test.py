@@ -1,5 +1,5 @@
 import pygame
-import sys
+import sys 
 
 # 1. Initialize Pygame and Setup Window
 pygame.init()
