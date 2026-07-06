@@ -6,7 +6,7 @@ You can only see roughly a 10-15 tile radius around Kyle at any time.
 
 IMPROVEMENTS:
 - Q key now works to return from werewolf islands
-- Gliders are consumed when crossing water (need to manage resources)
+- Gliders are consumed when crossing water (need to manage resources) 
 - Coastline outline is stable (no more wobbling)
 - Attack has visual feedback (screen shake + flash)
 - Rain drops maintain positions across weather cycles
