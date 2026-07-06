@@ -1,7 +1,7 @@
 """
 Kyle Jordan's Maze Adventure (Pixel-Based Edition) — IMPROVED VERSION
 ---------------------------------------------------------------------
-A 700x700 tile world (16px tiles -> 11,200 x 11,200 pixels total).
+A 700x700 tile world (16px tiles -> 11,200 x 11,200 pixels total). 
 You can only see roughly a 10-15 tile radius around Kyle at any time.
 
 IMPROVEMENTS:
