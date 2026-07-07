@@ -1,4 +1,4 @@
-"""
+""" 
 Kyle Jordan's Maze Adventure — DETAILED EDITION
 ================================================
 A rich, expanded version with deep gameplay systems.
