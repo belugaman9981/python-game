@@ -7,7 +7,7 @@ NEW SYSTEMS:
 - Day/Night cycle with lighting
 - Full inventory with item types and rarity
 - Crafting system (weapons, tools, consumables)
-- Quest log with multiple quest lines 
+- Quest log with multiple quest lines
 - NPC schedules and daily routines
 - Fishing minigame
 - Cooking system (recipes from ingredients)
