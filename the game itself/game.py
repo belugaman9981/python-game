@@ -9,7 +9,7 @@ NEW SYSTEMS:
 - Crafting system (weapons, tools, consumables)
 - Quest log with multiple quest lines
 - Working NPC schedules and daily routines
-- Fishing game
+- Fishing minigame
 - Cooking system (recipes from ingredients)
 - Weather effects (rain, fog, storms)
 - Sound system with ambient audio
