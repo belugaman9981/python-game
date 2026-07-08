@@ -16,7 +16,7 @@ NEW SYSTEMS:
 - Achievements
 - Bestiary (enemy info)
 - Map discovery/fog of war
-- Save/load system
+- Save/load/download system
 - Multiple weapon types
 - Armor/equipment slots
 - Status effects (poison, bleed, buffs)
