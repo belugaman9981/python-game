@@ -15,7 +15,7 @@ NEW SYSTEMS:
 - Sound system with ambient audio
 - Achievements
 - Bestiary (enemy info)
-- Map discovery/fog of war
+- Map discovery/fog of war 
 - Save/load/download system
 - Multiple weapon types
 - Armor/equipment slots
