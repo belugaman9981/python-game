@@ -8,7 +8,7 @@ NEW SYSTEMS:
 - Full inventory with item types and rarity
 - Crafting system (weapons, tools, consumables)
 - Quest log with multiple quest lines
-- NPC schedules and daily routines
+- Working NPC schedules and daily routines
 - Fishing game
 - Cooking system (recipes from ingredients)
 - Weather effects (rain, fog, storms)
