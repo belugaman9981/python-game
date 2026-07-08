@@ -21,7 +21,7 @@ NEW SYSTEMS:
 - Armor/equipment slots
 - Status effects (poison, bleed, buffs)
 - Dungeon rooms with puzzles
-- Merchant shops with rotating stock
+- Merchant shops with rotating stocks
 - Reputation system
 - Companion system
 - Base building (tent upgrades)
