@@ -5,7 +5,7 @@ A rich, expanded version with deep gameplay systems.
 
 NEW SYSTEMS:
 - Day/Night cycle with proper lighting
-- Full inventory with item types and rarity
+- Full inventory with item types and their rarity
 - Crafting system (weapons, tools, consumables)
 - Quest log with multiple quest lines
 - Working NPC schedules and daily routines
