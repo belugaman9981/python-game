@@ -4,7 +4,7 @@ Kyle Jordan's Maze Adventure — DETAILED EDITION
 A rich, expanded version with deep gameplay systems.
 
 NEW SYSTEMS:
-- Day/Night cycle with lighting
+- Day/Night cycle with proper lighting
 - Full inventory with item types and rarity
 - Crafting system (weapons, tools, consumables)
 - Quest log with multiple quest lines
